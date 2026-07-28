@@ -1,4 +1,4 @@
-# Autopilot
+# MikeMaxing
 
 A personal workout web app. No backend, no login — everything lives in
 `localStorage` on your device. Built with Vite + React, installable as a
