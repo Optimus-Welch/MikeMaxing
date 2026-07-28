@@ -5,6 +5,7 @@ import {
   getSettings,
   getExerciseLibrary,
   getLastPerformance,
+  getReadinessEntryForDate,
   addSession,
   upsertReadinessEntry,
 } from '../lib/db.js';
@@ -58,9 +59,17 @@ export default function Today() {
   const [library] = useState(getExerciseLibrary);
   const [sessionHistory, setSessionHistory] = useState(getSessionHistory);
 
-  const [sleepScore, setSleepScore] = useState('');
-  const [load, setLoad] = useState(null);
-  const [energy, setEnergy] = useState(null);
+  // Restore whatever readiness was already entered today. Without this the
+  // form comes back empty on every load, and because the recommendation is
+  // gated on having a score, the whole screen collapses to "log history" —
+  // the app looks like it has stopped making suggestions.
+  const [todayEntry] = useState(() => getReadinessEntryForDate(todayISO(new Date())));
+
+  const [sleepScore, setSleepScore] = useState(
+    todayEntry?.sleepScore != null ? String(todayEntry.sleepScore) : '',
+  );
+  const [load, setLoad] = useState(todayEntry?.load ?? null);
+  const [energy, setEnergy] = useState(todayEntry?.energy ?? null);
   const [manualLocation, setManualLocation] = useState(null);
   const [loggedType, setLoggedType] = useState(null); // overrides the recommended type when set
   const [justLogged, setJustLogged] = useState(false);
@@ -88,6 +97,21 @@ export default function Today() {
   );
 
   const band = readinessScore != null ? scoreToBand(readinessScore, settings.bands) : null;
+
+  // Persist readiness as it is entered, not only when a session is logged.
+  // Readiness is a fact about today that stands on its own — you might check
+  // your score, decide to rest, and close the app without logging anything.
+  useEffect(() => {
+    if (readinessScore == null) return;
+    upsertReadinessEntry({
+      date: todayISO(today),
+      sleepScore: sleepScore === '' ? null : Number(sleepScore),
+      load,
+      energy,
+      score: readinessScore,
+      band,
+    });
+  }, [readinessScore, band, sleepScore, load, energy, today]);
 
   const counts = useMemo(() => weeklyCounts(sessionHistory, today), [sessionHistory, today]);
 
@@ -209,18 +233,9 @@ export default function Today() {
   function handleLogSession() {
     if (!selectedType || !selectedLocation) return;
 
+    // Readiness is already persisted by the effect above, so there is nothing
+    // to write here beyond the session itself.
     const dateISO = todayISO(today);
-
-    if (readinessScore != null) {
-      upsertReadinessEntry({
-        date: dateISO,
-        sleepScore: sleepScore === '' ? null : Number(sleepScore),
-        load,
-        energy,
-        score: readinessScore,
-        band,
-      });
-    }
 
     const session = {
       id: crypto.randomUUID(),
@@ -317,6 +332,19 @@ export default function Today() {
           <p className="hint">Tap a number again to clear it.</p>
         </div>
       </section>
+
+      {/* Without this, an untouched form leaves the screen showing nothing but
+          history, and it is not obvious that readiness is the thing gating the
+          recommendation. */}
+      {readinessScore == null && (
+        <section className="card">
+          <h2>No session yet</h2>
+          <p className="hint">
+            Enter a sleep score or tap a training load above and Autopilot will pick today's
+            session — the type, the location, and (for a lift) the full exercise list.
+          </p>
+        </section>
+      )}
 
       {readinessScore != null && (
         <section className="card">
