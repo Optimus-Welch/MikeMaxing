@@ -15,7 +15,7 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
-`npm run check` runs the linter plus two data/logic checks:
+`npm run check` runs the linter plus three data/logic checks:
 
 - `npm run check:library` validates the exercise library (no exercise is
   tagged for a location that lacks its equipment) and prints per-location
@@ -24,6 +24,9 @@ preview` serves that build locally to test the PWA install flow.
   and seed and asserts the invariants — no duplicate movement families in a
   session, cap-friendly picks at Home, A/B alternation, and that swap and
   regenerate actually change something.
+- `npm run check:blocks` builds blocks and run steps for every band, asserting
+  the structure (warm up first, explicit rest, nothing dropped) and the
+  finish-screen maths (volume, records, first-time-is-not-a-record).
 
 ## Structure
 
@@ -40,15 +43,48 @@ src/
     weekly.js       # Monday-start weekly session counts
     exercises.js    # the shipped exercise library + equipment/cap metadata
     liftGenerator.js # pure session generation: templates, selection, schemes
+    blocks.js       # groups a session into named blocks; flattens to run steps
+    warmups.js      # warm-up / cool-down drills, keyed by movement pattern
+    sessionStats.js # finish-screen maths: volume, muscles, records
+    muscleMap.js    # muscle name -> diagram region mapping
   pages/
-    Today.jsx       # readiness entry, recommendation, lift plan, log, history
+    Today.jsx       # readiness, recommendation, block overview, START WORKOUT
+    Run.jsx         # guided one-thing-at-a-time run mode
+    Finish.jsx      # post-session payoff screen
     Settings.jsx    # readiness weights, band thresholds, targets, variety
   components/
     NavBar.jsx      # bottom tab bar (Today / Settings)
     HistoryList.jsx # recent sessions list
-    SessionPlan.jsx # renders a generated lift session + per-set logging
+    BlockList.jsx   # session overview: blocks, rounds, explicit rest
+    MuscleMap.jsx   # front/back body diagram drawn as SVG
 scripts/           # dev-only data and logic checks (see npm run check)
 ```
+
+## The guided session
+
+The engine decides *what* to train; this layer walks you through it.
+
+**Blocks.** `buildBlocks()` groups the generated exercises into named blocks
+with a round count — `WARM UP`, `[4x] PRIMARY STRENGTH — MAIN LIFT`,
+`[3x] ACCESSORY WORK — BLOCK A`, `COOL DOWN`. Rest is an explicit item with a
+duration (longer after heavy primary work, shorter on Orange days), not
+something implied between lines. Warm-up and cool-down drills are drawn from
+the movement patterns the session actually trains.
+
+**Run mode.** `buildRunSteps()` flattens blocks x rounds into a linear
+sequence, and `/run` walks it one screen at a time: current exercise, current
+set, editable reps and weight, a `PREVIOUS` line showing what you did last
+time, and swap/skip without leaving the flow. Marking a set done starts the
+rest countdown automatically.
+
+Run state is persisted to the `activeSession` collection on every step, so
+locking your phone mid-workout resumes exactly where you left off. The rest
+timer stores an absolute end time rather than counting down in memory —
+a backgrounded tab stops firing intervals, but wall-clock time does not.
+
+**Finish.** Total volume, sets, exercises, an SVG muscle map shaded by how
+much each region was worked, and any weight or rep records beaten. A first-ever
+performance is deliberately *not* a record.
 
 ### Data model
 

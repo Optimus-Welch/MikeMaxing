@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "check:library": "node scripts/check-library.mjs",
     "check:generator": "node scripts/check-generator.mjs",
-    "check": "npm run lint && npm run check:library && npm run check:generator"
+    "check:blocks": "node scripts/check-blocks.mjs",
+    "check": "npm run lint && npm run check:library && npm run check:generator && npm run check:blocks"
   },
   "dependencies": {
     "react": "^19.2.7",

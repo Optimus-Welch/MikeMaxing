@@ -21,6 +21,10 @@ const DEFAULTS = {
   // Bookkeeping that is not user data: which shipped-data versions this
   // browser has already been migrated to.
   meta: { exerciseLibraryVersion: 0 },
+  // An in-progress guided workout, or null. Persisted so closing the app
+  // mid-session (or the phone locking and the tab being evicted) does not
+  // lose the sets already ticked off.
+  activeSession: null,
 };
 
 // Write the seed value for any collection that has never been touched, so
@@ -128,6 +132,22 @@ export function getLastPerformance(exerciseId) {
     return { date: session.date, weight: best.weight, reps: best.reps, rpe: best.rpe };
   }
   return null;
+}
+
+// -- activeSession -------------------------------------------------------
+// The guided workout currently being performed. Written on every step so a
+// reload mid-session resumes exactly where it left off.
+
+export function getActiveSession() {
+  return readCollection('activeSession', null);
+}
+
+export function setActiveSession(session) {
+  return writeCollection('activeSession', session);
+}
+
+export function clearActiveSession() {
+  return writeCollection('activeSession', null);
 }
 
 // -- readinessLog --------------------------------------------------------
