@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { getProfile, getSettings, updateProfile, updateSettings } from '../lib/db.js';
 
 export default function Settings() {
@@ -20,7 +20,11 @@ export default function Settings() {
 
   function handleSave(e) {
     e.preventDefault();
-    updateSettings({ readinessWeights: settings.readinessWeights, bands: settings.bands });
+    updateSettings({
+      readinessWeights: settings.readinessWeights,
+      bands: settings.bands,
+      freshnessWindow: settings.freshnessWindow,
+    });
     updateProfile({ goals: profile.goals });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -97,6 +101,23 @@ export default function Settings() {
           </div>
         </section>
 
+        <section className="card">
+          <h2>Exercise variety</h2>
+          <p className="hint">
+            How many recent lift sessions the generator looks back over before it will reuse a
+            movement family (all flat-press variations count as one family). Higher means more
+            variety; set to 0 to turn the rule off. Where a location has only one option for a
+            pattern, it repeats regardless and is marked as such.
+          </p>
+          <div className="settings-grid">
+            <NumberField
+              label="Avoid repeats for (sessions)"
+              value={settings.freshnessWindow}
+              onChange={(v) => setSettings((s) => ({ ...s, freshnessWindow: v }))}
+            />
+          </div>
+        </section>
+
         <button type="submit" className="btn-primary">
           {saved ? 'Saved ✓' : 'Save settings'}
         </button>
@@ -106,10 +127,14 @@ export default function Settings() {
 }
 
 function NumberField({ label, value, onChange, step = '1' }) {
+  // Tie the label to the input so screen readers announce it (and so the
+  // label is a tap target for the field on touch devices).
+  const id = useId();
   return (
     <div className="field">
-      <label>{label}</label>
+      <label htmlFor={id}>{label}</label>
       <input
+        id={id}
         type="number"
         inputMode="decimal"
         step={step}
