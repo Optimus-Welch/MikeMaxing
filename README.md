@@ -15,6 +15,16 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
+`npm run check` runs the linter plus two data/logic checks:
+
+- `npm run check:library` validates the exercise library (no exercise is
+  tagged for a location that lacks its equipment) and prints per-location
+  coverage so gaps are visible.
+- `npm run check:generator` generates sessions across every band, location
+  and seed and asserts the invariants — no duplicate movement families in a
+  session, cap-friendly picks at Home, A/B alternation, and that swap and
+  regenerate actually change something.
+
 ## Structure
 
 ```
@@ -28,12 +38,16 @@ src/
     readiness.js     # pure functions: readiness score, band, and the
                     # Lift/Cardio/Rest + location recommendation
     weekly.js       # Monday-start weekly session counts
+    exercises.js    # the shipped exercise library + equipment/cap metadata
+    liftGenerator.js # pure session generation: templates, selection, schemes
   pages/
-    Today.jsx       # readiness entry, recommendation, log action, recent history
-    Settings.jsx    # edit readiness weights, band thresholds, weekly targets
+    Today.jsx       # readiness entry, recommendation, lift plan, log, history
+    Settings.jsx    # readiness weights, band thresholds, targets, variety
   components/
     NavBar.jsx      # bottom tab bar (Today / Settings)
     HistoryList.jsx # recent sessions list
+    SessionPlan.jsx # renders a generated lift session + per-set logging
+scripts/           # dev-only data and logic checks (see npm run check)
 ```
 
 ### Data model
@@ -43,11 +57,21 @@ Six collections, each just a JSON value under its own `localStorage` key
 
 - `profile` — units, and weekly goals (`liftsPerWeek`, `cardioPerWeek`)
 - `equipment` — per-location equipment lists (seeded with `Work` and `Home`)
-- `exerciseLibrary` — empty for now; a future slice will populate this and
-  use it to recommend specific exercises
-- `sessionHistory` — completed sessions (`type`, `location`, `date`)
+- `exerciseLibrary` — the shipped strength library, tagged with movement
+  pattern, muscles, equipment, locations, variation group and load notes
+- `sessionHistory` — completed sessions (`type`, `location`, `date`); lift
+  sessions also carry `templateId` and an `exercises` array with the sets
+  actually performed
 - `readinessLog` — one entry per day (`sleepScore`, `load`, `energy`, `score`, `band`)
-- `settings` — `readinessWeights` and `bands` (score thresholds)
+- `settings` — `readinessWeights`, `bands` (score thresholds), `freshnessWindow`
+- `meta` — non-user bookkeeping; currently which library version this browser
+  has been migrated to
+
+The exercise library is reference data shipped with the app rather than
+something you author, so `db.js` replaces it wholesale when
+`EXERCISE_LIBRARY_VERSION` in `seed.js` is bumped. Plain seeding is not
+enough: a collection that already exists is never re-seeded, so anyone who
+ran an earlier version would otherwise be stuck with the old library.
 
 `db.js` is the seam for a future backend: every page goes through its
 functions (`getProfile`, `addSession`, ...) instead of localStorage
@@ -66,8 +90,42 @@ directly, so swapping in a real API later means rewriting `storage.js` and
    Rest/Recovery) using the band plus how many lifts/cardio sessions are
    already logged this week against `profile.goals`, and a **location**
    (Work on weekdays, Home on weekends, overridable). It returns a
-   one-line rationale but does not pick specific exercises — that's a
-   later slice, once `exerciseLibrary` is populated.
+   one-line rationale.
+
+### Lift generation
+
+When the recommendation is a Lift, `generateLiftSession()` builds the
+workout. It is a pure function of its inputs plus a seed, so the same seed
+always yields the same session and "Regenerate" is simply a new seed.
+
+1. **Template.** Two full-body templates alternate off the last logged lift
+   session: **A — Squat / Horizontal** and **B — Hinge / Vertical**. One
+   A→B cycle covers all nine movement patterns while consecutive sessions
+   emphasise different ones.
+2. **Selection.** For each slot, candidates are filtered to what is possible
+   at the chosen location, then narrowed by a chain of *soft* preferences —
+   availability always wins, so a preference that would empty the pool is
+   skipped:
+   - **tier** — a primary slot wants a real compound, never an isolation lift
+   - **cap-awareness** — at Home, squat/hinge/unilateral patterns prefer
+     exercises flagged `capFriendly`
+   - **freshness** — nothing whose `variationGroup` appeared in the last
+     `settings.freshnessWindow` lift sessions
+3. **Prescription.** The readiness band sets volume and intensity (Green =
+   low reps / high intensity, Yellow = standard, Orange = reduced volume,
+   Red = recovery instead of a lift), and a set/rep scheme is drawn from
+   straight sets, tempo, supersets, drop sets and EMOM.
+
+**Cap-awareness lives in the data, not the UI.** Each exercise carries
+`capFriendly` and a `capStrategy` (`unilateral` / `tempo` / `highRep` /
+`elevatedRange`) explaining *why* it stays hard under Home's 52.5 lb-per-hand
+and 80 lb-barbell ceilings. Adding a new cap-beating variation is a data
+edit, not a code change.
+
+**Logging.** Each exercise expands into set rows capturing reps, weight and
+optional RPE, with weight pre-filled from the last time you did that
+exercise. Only rows you actually touch are saved — a pre-filled row is a
+suggestion, not a record that the set happened.
 
 ## PWA install
 

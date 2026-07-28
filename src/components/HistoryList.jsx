@@ -15,6 +15,10 @@ export default function HistoryList({ sessions, limit = 8 }) {
             {TYPE_ICON[session.type] ?? ''} {session.type}
           </span>
           <span className="meta">
+            {session.templateId ? `${session.templateId} · ` : ''}
+            {Array.isArray(session.exercises) && session.exercises.length
+              ? `${session.exercises.length} exercises · `
+              : ''}
             {session.location} · {formatDate(session.date)}
           </span>
         </li>

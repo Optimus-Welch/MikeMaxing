@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:library": "node scripts/check-library.mjs",
+    "check:generator": "node scripts/check-generator.mjs",
+    "check": "npm run lint && npm run check:library && npm run check:generator"
   },
   "dependencies": {
     "react": "^19.2.7",

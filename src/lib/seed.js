@@ -39,6 +39,12 @@ export const seedEquipment = {
   },
 };
 
+// Bump whenever seedExerciseLibrary changes in a way existing installs should
+// pick up. db.js compares this against the version last written to storage and
+// re-seeds the library when it is behind — without this, anyone who already ran
+// Phase 0 would be stuck with the empty library that shipped then.
+export const EXERCISE_LIBRARY_VERSION = 1;
+
 // Readiness config, edited on the Settings screen. Weekly targets live on
 // `profile.goals` instead of here (see comment above) so there is only one
 // place that number is stored.
@@ -58,4 +64,7 @@ export const seedSettings = {
     yellow: 55,
     orange: 35,
   },
+  // How many recent lift sessions the generator looks back over before it is
+  // willing to reuse a variationGroup. 0 disables freshness filtering.
+  freshnessWindow: 3,
 };
