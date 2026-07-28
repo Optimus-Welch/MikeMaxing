@@ -1,89 +1,52 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   getProfile,
   getSessionHistory,
   getSettings,
   getExerciseLibrary,
-  getLastPerformance,
   getReadinessEntryForDate,
+  getActiveSession,
+  setActiveSession,
+  clearActiveSession,
   addSession,
   upsertReadinessEntry,
 } from '../lib/db.js';
 import { computeReadiness, scoreToBand, recommendSession } from '../lib/readiness.js';
 import { weeklyCounts, todayISO } from '../lib/weekly.js';
-import { generateLiftSession, swapExercise } from '../lib/liftGenerator.js';
+import { generateLiftSession } from '../lib/liftGenerator.js';
+import { buildBlocks, createRunState } from '../lib/blocks.js';
 import HistoryList from '../components/HistoryList.jsx';
-import SessionPlan from '../components/SessionPlan.jsx';
+import BlockList from '../components/BlockList.jsx';
 
 const LOAD_OPTIONS = [1, 2, 3, 4, 5];
 const ENERGY_OPTIONS = [1, 2, 3, 4, 5];
 const SESSION_TYPES = ['Lift', 'Cardio', 'Rest'];
 const LOCATIONS = ['Work', 'Home'];
 
-// One blank log row for an exercise, with the weight pre-filled from the last
-// time it was logged.
-//
-// `touched` is what separates "prescribed" from "actually performed". The
-// weight is pre-filled (matching last session is the common case and editing a
-// number beats typing one), which means a row is NOT evidence that the set
-// happened. Only rows the user edited get persisted — otherwise merely opening
-// a generated session would record a full workout nobody did.
-function blankRow(ex, last) {
-  return {
-    reps: '',
-    repsPlaceholder: ex.reps != null ? String(ex.reps) : '',
-    weight: last?.weight != null ? String(last.weight) : '',
-    weightPlaceholder: last?.weight != null ? String(last.weight) : '',
-    rpe: '',
-    touched: false,
-    lastPerformance: last,
-  };
-}
-
-function buildRows(ex) {
-  const last = getLastPerformance(ex.exerciseId);
-  return Array.from({ length: ex.sets ?? 3 }, () => blankRow(ex, last));
-}
-
-function buildLog(session) {
-  const log = {};
-  for (const ex of session.exercises) log[ex.exerciseId] = buildRows(ex);
-  return log;
-}
-
 export default function Today() {
-  // Loaded once — these collections only change via the actions below, so
-  // we update local state directly instead of re-reading localStorage.
+  const navigate = useNavigate();
+
   const [profile] = useState(getProfile);
   const [settings] = useState(getSettings);
   const [library] = useState(getExerciseLibrary);
   const [sessionHistory, setSessionHistory] = useState(getSessionHistory);
+  const [activeSession] = useState(getActiveSession);
 
-  // Restore whatever readiness was already entered today. Without this the
-  // form comes back empty on every load, and because the recommendation is
-  // gated on having a score, the whole screen collapses to "log history" —
-  // the app looks like it has stopped making suggestions.
+  // Restore whatever readiness was already entered today, so reopening the app
+  // does not collapse the screen back to "no suggestion".
   const [todayEntry] = useState(() => getReadinessEntryForDate(todayISO(new Date())));
-
   const [sleepScore, setSleepScore] = useState(
     todayEntry?.sleepScore != null ? String(todayEntry.sleepScore) : '',
   );
   const [load, setLoad] = useState(todayEntry?.load ?? null);
   const [energy, setEnergy] = useState(todayEntry?.energy ?? null);
-  const [manualLocation, setManualLocation] = useState(null);
-  const [loggedType, setLoggedType] = useState(null); // overrides the recommended type when set
-  const [justLogged, setJustLogged] = useState(false);
 
-  // Generated lift session + what actually got done.
-  const [liftSession, setLiftSession] = useState(null);
-  const [log, setLog] = useState({});
-  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e9));
-  // Set when the user insists on lifting despite a Red readiness score.
+  const [manualLocation, setManualLocation] = useState(null);
+  const [loggedType, setLoggedType] = useState(null);
   const [forceLiftOnRed, setForceLiftOnRed] = useState(false);
-  // Once today's session is logged, freeze the plan. Without this, appending
-  // to sessionHistory would re-run generation and swap the plan out from under
-  // the user the instant they saved it.
-  const [planLocked, setPlanLocked] = useState(false);
+  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e9));
+  const [justLogged, setJustLogged] = useState(false);
 
   const today = useMemo(() => new Date(), []);
 
@@ -99,8 +62,6 @@ export default function Today() {
   const band = readinessScore != null ? scoreToBand(readinessScore, settings.bands) : null;
 
   // Persist readiness as it is entered, not only when a session is logged.
-  // Readiness is a fact about today that stands on its own — you might check
-  // your score, decide to rest, and close the app without logging anything.
   useEffect(() => {
     if (readinessScore == null) return;
     upsertReadinessEntry({
@@ -123,25 +84,14 @@ export default function Today() {
   const selectedType = loggedType ?? recommendation?.type ?? null;
   const selectedLocation = recommendation?.location ?? manualLocation;
 
-  // A lift plan is shown when the session is a Lift and readiness is not Red.
-  // Red gets a recovery message instead, with an explicit override.
   const shouldGenerate =
     selectedType === 'Lift' && selectedLocation && band && (band !== 'Red' || forceLiftOnRed);
-
-  // Red-forced sessions borrow the Orange prescription — reduced volume, low
-  // intensity — rather than pretending the readiness score said something else.
   const generationBand = band === 'Red' ? 'Orange' : band;
 
-  // Regenerate whenever the inputs that define the session change. Keyed on
-  // `seed` so "Regenerate" is just a new seed.
-  useEffect(() => {
-    if (planLocked) return;
-    if (!shouldGenerate) {
-      setLiftSession(null);
-      setLog({});
-      return;
-    }
-    const next = generateLiftSession({
+  // Generation is pure, so it can just be derived rather than held in state.
+  const liftSession = useMemo(() => {
+    if (!shouldGenerate) return null;
+    return generateLiftSession({
       location: selectedLocation,
       band: generationBand,
       library,
@@ -149,8 +99,6 @@ export default function Today() {
       freshnessWindow: settings.freshnessWindow,
       seed,
     });
-    setLiftSession(next);
-    setLog(buildLog(next));
   }, [
     shouldGenerate,
     selectedLocation,
@@ -159,119 +107,33 @@ export default function Today() {
     sessionHistory,
     settings.freshnessWindow,
     seed,
-    planLocked,
   ]);
 
-  const handleSetChange = useCallback((exerciseId, setIndex, field, value) => {
-    setLog((prev) => {
-      const rows = prev[exerciseId] ?? [];
-      const next = rows.map((row, i) =>
-        i === setIndex ? { ...row, [field]: value, touched: true } : row,
-      );
-      return { ...prev, [exerciseId]: next };
-    });
-  }, []);
-
-  // A manually added set is by definition one the user is doing, so it counts
-  // as touched even before they type into it.
-  const handleAddSet = useCallback((exerciseId) => {
-    setLog((prev) => {
-      const rows = prev[exerciseId] ?? [];
-      const template = rows[rows.length - 1] ?? { reps: '', weight: '', rpe: '' };
-      return {
-        ...prev,
-        [exerciseId]: [...rows, { ...template, rpe: '', touched: true }],
-      };
-    });
-  }, []);
-
-  const handleRemoveSet = useCallback((exerciseId, setIndex) => {
-    setLog((prev) => {
-      const rows = prev[exerciseId] ?? [];
-      if (rows.length <= 1) return prev;
-      return { ...prev, [exerciseId]: rows.filter((_, i) => i !== setIndex) };
-    });
-  }, []);
-
-  // Swap one exercise, keeping the rest of the session and any sets already
-  // logged against the exercises that did not change.
-  const handleSwap = useCallback(
-    (index) => {
-      if (!liftSession) return;
-      const swapSeed = Math.floor(Math.random() * 1e9);
-      const next = swapExercise({
-        session: liftSession,
-        index,
-        library,
-        sessionHistory,
-        freshnessWindow: settings.freshnessWindow,
-        seed: swapSeed,
-      });
-      setLiftSession(next);
-
-      const replaced = next.exercises[index];
-      const previousId = liftSession.exercises[index].exerciseId;
-      setLog((prev) => {
-        // Drop the outgoing exercise's rows, keep everything already logged
-        // against the slots that did not change.
-        const rest = Object.fromEntries(
-          Object.entries(prev).filter(([id]) => id !== previousId),
-        );
-        return { ...rest, [replaced.exerciseId]: buildRows(replaced) };
-      });
-    },
-    [liftSession, library, sessionHistory, settings.freshnessWindow],
+  const { blocks, estimatedMinutes } = useMemo(
+    () => (liftSession ? buildBlocks(liftSession) : { blocks: [], estimatedMinutes: 0 }),
+    [liftSession],
   );
 
-  // Regenerating after logging is an explicit "give me another one" — unlock
-  // the plan so the effect runs again.
-  const handleRegenerate = useCallback(() => {
-    setPlanLocked(false);
-    setSeed(Math.floor(Math.random() * 1e9));
-  }, []);
+  function startWorkout() {
+    const runState = createRunState({
+      session: liftSession,
+      location: selectedLocation,
+      band,
+      date: todayISO(today),
+    });
+    setActiveSession(runState);
+    navigate('/run');
+  }
 
-  function handleLogSession() {
-    if (!selectedType || !selectedLocation) return;
-
-    // Readiness is already persisted by the effect above, so there is nothing
-    // to write here beyond the session itself.
-    const dateISO = todayISO(today);
-
+  // Non-lift sessions (Cardio, Rest) have no generated plan to run, so they
+  // are still logged with a single tap.
+  function logSimpleSession() {
     const session = {
       id: crypto.randomUUID(),
       type: selectedType,
       location: selectedLocation,
-      date: dateISO,
+      date: todayISO(today),
     };
-
-    // Attach the plan and the logged sets so this session feeds freshness
-    // (via variationGroup) and weight pre-fill (via sets) next time.
-    if (selectedType === 'Lift' && liftSession) {
-      session.templateId = liftSession.templateId;
-      session.templateName = liftSession.templateName;
-      session.band = liftSession.band;
-      session.seed = liftSession.seed;
-      session.exercises = liftSession.exercises.map((ex) => ({
-        exerciseId: ex.exerciseId,
-        name: ex.name,
-        pattern: ex.pattern,
-        variationGroup: ex.variationGroup,
-        emphasis: ex.emphasis,
-        prescription: ex.prescription,
-        // Only sets the user actually touched — a pre-filled row is a
-        // suggestion, not a record that the set happened.
-        sets: (log[ex.exerciseId] ?? [])
-          .filter((r) => r.touched)
-          .map((r) => ({
-            reps: r.reps === '' ? null : Number(r.reps),
-            weight: r.weight === '' ? null : Number(r.weight),
-            rpe: r.rpe === '' ? null : Number(r.rpe),
-          })),
-      }));
-    }
-
-    if (selectedType === 'Lift' && liftSession) setPlanLocked(true);
-
     setSessionHistory(addSession(session));
     setJustLogged(true);
     setTimeout(() => setJustLogged(false), 2000);
@@ -280,25 +142,55 @@ export default function Today() {
   return (
     <>
       <h1 className="page-title">Today</h1>
+      <p className="page-sub">
+        {today.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+      </p>
+
+      {/* An unfinished workout beats anything else on this screen. */}
+      {activeSession && (
+        <div className="resume-banner">
+          <div>
+            <div className="rb-title">Workout in progress</div>
+            <div className="rb-sub">
+              {activeSession.templateName} · {activeSession.location}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                clearActiveSession();
+                window.location.reload();
+              }}
+            >
+              Discard
+            </button>
+            <button type="button" className="btn-secondary" onClick={() => navigate('/run')}>
+              Resume
+            </button>
+          </div>
+        </div>
+      )}
 
       <section className="card">
         <h2>Readiness</h2>
         <div className="field">
-          <label htmlFor="sleep">Sleep score (0-100)</label>
+          <label htmlFor="sleep">Sleep score</label>
           <input
             id="sleep"
             type="number"
             min="0"
             max="100"
             inputMode="numeric"
-            placeholder="e.g. 82"
+            placeholder="0–100"
             value={sleepScore}
             onChange={(e) => setSleepScore(e.target.value)}
           />
         </div>
 
         <div className="field">
-          <label>Training load this week (1 = easy, 5 = very hard)</label>
+          <label>Training load</label>
           <div className="pill-group" role="group" aria-label="Training load">
             {LOAD_OPTIONS.map((n) => (
               <button
@@ -312,6 +204,7 @@ export default function Today() {
               </button>
             ))}
           </div>
+          <p className="hint">1 = easy week so far, 5 = very hard.</p>
         </div>
 
         <div className="field">
@@ -329,122 +222,134 @@ export default function Today() {
               </button>
             ))}
           </div>
-          <p className="hint">Tap a number again to clear it.</p>
         </div>
       </section>
 
-      {/* Without this, an untouched form leaves the screen showing nothing but
-          history, and it is not obvious that readiness is the thing gating the
-          recommendation. */}
       {readinessScore == null && (
         <section className="card">
           <h2>No session yet</h2>
           <p className="hint">
-            Enter a sleep score or tap a training load above and Autopilot will pick today's
-            session — the type, the location, and (for a lift) the full exercise list.
+            Enter a sleep score or tap a training load and Autopilot will build today's session.
           </p>
         </section>
       )}
 
-      {readinessScore != null && (
+      {readinessScore != null && recommendation && (
         <section className="card">
           <div className={`band-banner band-${band}`}>
             <span className="score">{readinessScore}</span>
             <span className="band-label">{band}</span>
           </div>
 
-          {recommendation && (
-            <div className="recommendation">
-              <div className="type">
-                {recommendation.type} · {selectedLocation}
-              </div>
-              <p className="rationale">{recommendation.rationale}</p>
-
-              <div className="field">
-                <label>Location</label>
-                <div className="pill-group" role="group" aria-label="Location">
-                  {LOCATIONS.map((loc) => (
-                    <button
-                      key={loc}
-                      type="button"
-                      className="pill"
-                      aria-pressed={selectedLocation === loc}
-                      onClick={() => setManualLocation(loc)}
-                    >
-                      {loc}
-                    </button>
-                  ))}
-                </div>
-                {manualLocation && manualLocation !== recommendation.defaultLocation && (
-                  <p className="hint">Default for today is {recommendation.defaultLocation}.</p>
-                )}
-              </div>
-
-              <div className="field">
-                <label>Session actually done</label>
-                <div className="pill-group" role="group" aria-label="Session type to log">
-                  {SESSION_TYPES.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      className="pill"
-                      aria-pressed={selectedType === type}
-                      onClick={() => setLoggedType(type)}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button type="button" className="btn-primary" onClick={handleLogSession}>
-                {justLogged ? 'Logged ✓' : 'Log session'}
-              </button>
+          <div className="recommendation">
+            <div className="type">
+              {recommendation.type} · {selectedLocation}
             </div>
-          )}
+            <p className="rationale">{recommendation.rationale}</p>
+
+            <div className="field">
+              <label>Location</label>
+              <div className="pill-group" role="group" aria-label="Location">
+                {LOCATIONS.map((loc) => (
+                  <button
+                    key={loc}
+                    type="button"
+                    className="pill"
+                    aria-pressed={selectedLocation === loc}
+                    onClick={() => setManualLocation(loc)}
+                  >
+                    {loc}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="field">
+              <label>Session type</label>
+              <div className="pill-group" role="group" aria-label="Session type to log">
+                {SESSION_TYPES.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className="pill"
+                    aria-pressed={selectedType === type}
+                    onClick={() => setLoggedType(type)}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </section>
       )}
 
-      {/* Red + Lift: lead with recovery, but do not block someone who has
-          decided to train anyway. */}
       {selectedType === 'Lift' && band === 'Red' && !forceLiftOnRed && (
         <section className="card">
           <h2>Recovery recommended</h2>
           <p className="hint">
-            Readiness is Red. No lift is generated by default — sleep, food and an easy walk will do
-            more for you today than a session will.
+            Readiness is Red. Sleep, food and an easy walk will do more for you today than a session
+            will.
           </p>
           <button
             type="button"
             className="btn-secondary"
+            style={{ marginTop: 14 }}
             onClick={() => setForceLiftOnRed(true)}
           >
-            Generate a reduced session anyway
+            Build a reduced session anyway
           </button>
         </section>
       )}
 
-      {liftSession && (
+      {liftSession && blocks.length > 0 && (
         <>
+          <button type="button" className="btn-start" onClick={startWorkout}>
+            Start workout
+          </button>
+
+          <div className="session-meta">
+            <div className="meta-stat">
+              <div className="meta-value">~{estimatedMinutes}</div>
+              <div className="meta-label">Minutes</div>
+            </div>
+            <div className="meta-stat">
+              <div className="meta-value">{liftSession.exercises.length}</div>
+              <div className="meta-label">Exercises</div>
+            </div>
+            <div className="meta-stat">
+              <div className="meta-value">{blocks.length}</div>
+              <div className="meta-label">Blocks</div>
+            </div>
+          </div>
+
           {band === 'Red' && (
             <p className="hint warn">
-              Readiness is Red — this session uses reduced volume and low intensity. Stop early if it
-              feels wrong.
+              Readiness is Red — reduced volume and low intensity. Stop early if it feels wrong.
             </p>
           )}
-          <SessionPlan
-            session={liftSession}
-            log={log}
-            onSetChange={handleSetChange}
-            onAddSet={handleAddSet}
-            onRemoveSet={handleRemoveSet}
-            onSwap={handleSwap}
-            onRegenerate={handleRegenerate}
-          />
+
+          <BlockList blocks={blocks} />
+
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ width: '100%', marginBottom: 14 }}
+            onClick={() => setSeed(Math.floor(Math.random() * 1e9))}
+          >
+            Regenerate session
+          </button>
         </>
       )}
 
-      <section className="card">
+      {/* Cardio and Rest have no generated plan yet — log them directly. */}
+      {recommendation && selectedType !== 'Lift' && (
+        <button type="button" className="btn-primary" onClick={logSimpleSession}>
+          {justLogged ? 'Logged ✓' : `Log ${selectedType.toLowerCase()} session`}
+        </button>
+      )}
+
+      <section className="card" style={{ marginTop: 14 }}>
         <h2>This week</h2>
         <p className="hint">
           Lifts {counts.Lift}/{profile.goals.liftsPerWeek} · Cardio {counts.Cardio}/
