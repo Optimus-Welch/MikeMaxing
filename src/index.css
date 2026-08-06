@@ -855,3 +855,17 @@ button:focus-visible {
     animation: none !important;
   }
 }
+
+/* Band-coloured section labels (Settings > Session length). */
+.eyebrow.band-Green {
+  color: var(--green);
+}
+.eyebrow.band-Yellow {
+  color: var(--yellow);
+}
+.eyebrow.band-Orange {
+  color: var(--orange);
+}
+.eyebrow.band-Red {
+  color: var(--red);
+}

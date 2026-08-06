@@ -11,7 +11,8 @@
     "check:library": "node scripts/check-library.mjs",
     "check:generator": "node scripts/check-generator.mjs",
     "check:blocks": "node scripts/check-blocks.mjs",
-    "check": "npm run lint && npm run check:library && npm run check:generator && npm run check:blocks"
+    "check:migration": "node scripts/check-migration.mjs",
+    "check": "npm run lint && npm run check:library && npm run check:generator && npm run check:blocks && npm run check:migration"
   },
   "dependencies": {
     "react": "^19.2.7",

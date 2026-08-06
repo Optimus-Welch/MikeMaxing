@@ -1,36 +1,19 @@
-// Pure functions for turning today's readiness inputs into a 0-100 score,
-// a band, and a session recommendation. Nothing here touches storage —
-// that keeps it easy to unit-test and to reuse (e.g. Settings screen can
-// preview how a change to the weights would score a sample day).
+// Pure functions turning today's readiness score into a band, a session
+// recommendation, and a duration target. Nothing here touches storage.
+//
+// The score itself is Garmin's Training Readiness, entered by hand. Garmin
+// already folds in sleep, recovery time, HRV, acute load, recent sleep and
+// recent rest, so there is nothing left for this app to weight or combine —
+// it takes the number as given.
 
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 
-// Convert each raw input onto a common 0-100 "higher is more ready" scale.
-// - sleepScore is already 0-100.
-// - load is a 1-5 pick (1 = easy week so far, 5 = very hard) and gets
-//   inverted, since a heavy training load lowers readiness.
-// - energy is an optional 1-5 subjective rating.
-function toComponents({ sleepScore, load, energy }) {
-  const components = {};
-  if (sleepScore != null) components.sleep = clamp(sleepScore, 0, 100);
-  if (load != null) components.load = clamp(((5 - load) / 4) * 100, 0, 100);
-  if (energy != null) components.energy = clamp(((energy - 1) / 4) * 100, 0, 100);
-  return components;
-}
-
-// Weighted average of whichever components were actually provided, with
-// the remaining weights renormalized so they still sum to 1. Returns null
-// if nothing was entered yet.
-export function computeReadiness(inputs, weights) {
-  const components = toComponents(inputs);
-  const keys = Object.keys(components);
-  if (keys.length === 0) return null;
-
-  const totalWeight = keys.reduce((sum, k) => sum + (weights[k] ?? 0), 0);
-  if (totalWeight === 0) return null;
-
-  const score = keys.reduce((sum, k) => sum + components[k] * (weights[k] ?? 0), 0) / totalWeight;
-  return Math.round(clamp(score, 0, 100));
+/** Normalise a manually-entered Training Readiness score, or null if unusable. */
+export function parseReadinessScore(raw) {
+  if (raw === '' || raw == null) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(clamp(n, 0, 100));
 }
 
 export function scoreToBand(score, bands) {
@@ -54,6 +37,24 @@ function daysLeftInWeek(date) {
 export function defaultLocationFor(date) {
   const weekday = isoWeekday(date); // 1 = Mon ... 7 = Sun
   return weekday <= 5 ? 'Work' : 'Home';
+}
+
+/**
+ * Duration target for a band — how LONG today's session should be, as opposed
+ * to how hard. Higher readiness buys a longer session.
+ *
+ * Intensity (reps, RPE, sets per exercise) is a separate axis handled by
+ * BAND_PRESCRIPTION in liftGenerator.js. This one controls size: how many
+ * exercises a lift contains, and how many minutes of cardio to aim for.
+ *
+ * Falls back to the Yellow defaults if a band is missing from settings, so a
+ * half-configured settings object can never produce an empty session.
+ */
+export function durationTargetFor(band, durationTargets) {
+  return (
+    durationTargets?.[band] ??
+    durationTargets?.Yellow ?? { liftExercises: 5, cardioMinutes: 30 }
+  );
 }
 
 // Decide session TYPE + LOCATION for today. Does not pick exercises.

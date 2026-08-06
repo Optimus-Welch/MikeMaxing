@@ -2,14 +2,15 @@
 // call these instead of storage.js directly, so the storage format and the
 // seeding logic stay in one place.
 
-import { readCollection, writeCollection } from './storage';
+import { readCollection, writeCollection } from './storage.js';
 import {
   seedProfile,
   seedEquipment,
   seedSettings,
   EXERCISE_LIBRARY_VERSION,
-} from './seed';
-import { seedExerciseLibrary } from './exercises';
+  SETTINGS_VERSION,
+} from './seed.js';
+import { seedExerciseLibrary } from './exercises.js';
 
 const DEFAULTS = {
   profile: seedProfile,
@@ -20,7 +21,7 @@ const DEFAULTS = {
   settings: seedSettings,
   // Bookkeeping that is not user data: which shipped-data versions this
   // browser has already been migrated to.
-  meta: { exerciseLibraryVersion: 0 },
+  meta: { exerciseLibraryVersion: 0, settingsVersion: 0 },
   // An in-progress guided workout, or null. Persisted so closing the app
   // mid-session (or the phone locking and the tab being evicted) does not
   // lose the sets already ticked off.
@@ -48,8 +49,67 @@ function ensureLibraryCurrent() {
   writeCollection('meta', { ...meta, exerciseLibraryVersion: EXERCISE_LIBRARY_VERSION });
 }
 
+// Move a pre-Garmin install onto the new settings shape:
+//   - drop `readinessWeights` — the multi-input scoring it configured is gone,
+//     and a stale key would just be confusing dead data
+//   - add `durationTargets` if absent
+// Everything the user actually tuned (band thresholds, freshness window) is
+// preserved. Runs once, guarded by meta.settingsVersion.
+function migrateSettings() {
+  const meta = readCollection('meta', DEFAULTS.meta);
+  if ((meta.settingsVersion ?? 0) >= SETTINGS_VERSION) return;
+
+  const stored = readCollection('settings', seedSettings) ?? {};
+  const { readinessWeights: _removed, ...keep } = stored;
+
+  writeCollection('settings', {
+    ...seedSettings,
+    ...keep,
+    bands: { ...seedSettings.bands, ...(keep.bands ?? {}) },
+    durationTargets: { ...seedSettings.durationTargets, ...(keep.durationTargets ?? {}) },
+  });
+  writeCollection('meta', { ...meta, settingsVersion: SETTINGS_VERSION });
+}
+
+// Bring old readiness entries onto the new shape without discarding anything.
+//
+// Pre-Garmin entries were computed from sleep/load/energy. Those raw inputs are
+// kept as a historical record — they are what actually happened on that day —
+// but every entry is guaranteed a `score` and a `band` so the rest of the app
+// can read old and new days identically. `source` records where the number came
+// from, so a legacy computed score is never mistaken for a Garmin reading.
+function migrateReadinessLog() {
+  const log = readCollection('readinessLog', []);
+  if (!Array.isArray(log) || log.length === 0) return;
+  if (log.every((e) => e.source)) return; // already migrated
+
+  const bands = { ...seedSettings.bands, ...(readCollection('settings', seedSettings)?.bands ?? {}) };
+  const bandFor = (score) => {
+    if (score >= bands.green) return 'Green';
+    if (score >= bands.yellow) return 'Yellow';
+    if (score >= bands.orange) return 'Orange';
+    return 'Red';
+  };
+
+  writeCollection(
+    'readinessLog',
+    log.map((entry) => {
+      if (entry.source) return entry;
+      return {
+        ...entry,
+        source: 'legacy',
+        // A legacy entry should always have a score, but recover the band from
+        // it if that is the field that went missing.
+        band: entry.band ?? (entry.score != null ? bandFor(entry.score) : null),
+      };
+    }),
+  );
+}
+
 ensureSeeded();
 ensureLibraryCurrent();
+migrateSettings();
+migrateReadinessLog();
 
 // Merge stored values over the seed defaults so keys added in a later release
 // (e.g. settings.freshnessWindow) appear for people who already have a stored

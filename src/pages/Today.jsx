@@ -12,15 +12,18 @@ import {
   addSession,
   upsertReadinessEntry,
 } from '../lib/db.js';
-import { computeReadiness, scoreToBand, recommendSession } from '../lib/readiness.js';
+import {
+  parseReadinessScore,
+  scoreToBand,
+  recommendSession,
+  durationTargetFor,
+} from '../lib/readiness.js';
 import { weeklyCounts, todayISO } from '../lib/weekly.js';
 import { generateLiftSession } from '../lib/liftGenerator.js';
 import { buildBlocks, createRunState } from '../lib/blocks.js';
 import HistoryList from '../components/HistoryList.jsx';
 import BlockList from '../components/BlockList.jsx';
 
-const LOAD_OPTIONS = [1, 2, 3, 4, 5];
-const ENERGY_OPTIONS = [1, 2, 3, 4, 5];
 const SESSION_TYPES = ['Lift', 'Cardio', 'Rest'];
 const LOCATIONS = ['Work', 'Home'];
 
@@ -36,11 +39,9 @@ export default function Today() {
   // Restore whatever readiness was already entered today, so reopening the app
   // does not collapse the screen back to "no suggestion".
   const [todayEntry] = useState(() => getReadinessEntryForDate(todayISO(new Date())));
-  const [sleepScore, setSleepScore] = useState(
-    todayEntry?.sleepScore != null ? String(todayEntry.sleepScore) : '',
+  const [readinessInput, setReadinessInput] = useState(
+    todayEntry?.score != null ? String(todayEntry.score) : '',
   );
-  const [load, setLoad] = useState(todayEntry?.load ?? null);
-  const [energy, setEnergy] = useState(todayEntry?.energy ?? null);
 
   const [manualLocation, setManualLocation] = useState(null);
   const [loggedType, setLoggedType] = useState(null);
@@ -50,14 +51,8 @@ export default function Today() {
 
   const today = useMemo(() => new Date(), []);
 
-  const readinessScore = useMemo(
-    () =>
-      computeReadiness(
-        { sleepScore: sleepScore === '' ? null : Number(sleepScore), load, energy },
-        settings.readinessWeights,
-      ),
-    [sleepScore, load, energy, settings.readinessWeights],
-  );
+  // Garmin's number, taken as given — no weighting, no combining.
+  const readinessScore = useMemo(() => parseReadinessScore(readinessInput), [readinessInput]);
 
   const band = readinessScore != null ? scoreToBand(readinessScore, settings.bands) : null;
 
@@ -66,13 +61,11 @@ export default function Today() {
     if (readinessScore == null) return;
     upsertReadinessEntry({
       date: todayISO(today),
-      sleepScore: sleepScore === '' ? null : Number(sleepScore),
-      load,
-      energy,
+      source: 'garmin',
       score: readinessScore,
       band,
     });
-  }, [readinessScore, band, sleepScore, load, energy, today]);
+  }, [readinessScore, band, today]);
 
   const counts = useMemo(() => weeklyCounts(sessionHistory, today), [sessionHistory, today]);
 
@@ -83,6 +76,12 @@ export default function Today() {
 
   const selectedType = loggedType ?? recommendation?.type ?? null;
   const selectedLocation = recommendation?.location ?? manualLocation;
+
+  // Duration axis: how much session today's score buys.
+  const duration = useMemo(
+    () => durationTargetFor(band, settings.durationTargets),
+    [band, settings.durationTargets],
+  );
 
   const shouldGenerate =
     selectedType === 'Lift' && selectedLocation && band && (band !== 'Red' || forceLiftOnRed);
@@ -97,6 +96,7 @@ export default function Today() {
       library,
       sessionHistory,
       freshnessWindow: settings.freshnessWindow,
+      exerciseCount: duration.liftExercises,
       seed,
     });
   }, [
@@ -106,6 +106,7 @@ export default function Today() {
     library,
     sessionHistory,
     settings.freshnessWindow,
+    duration.liftExercises,
     seed,
   ]);
 
@@ -133,6 +134,10 @@ export default function Today() {
       type: selectedType,
       location: selectedLocation,
       date: todayISO(today),
+      band,
+      // Cardio has no generated plan yet, but the duration target is what the
+      // readiness score bought today, so it is worth recording.
+      ...(selectedType === 'Cardio' ? { targetMinutes: duration.cardioMinutes } : {}),
     };
     setSessionHistory(addSession(session));
     setJustLogged(true);
@@ -174,54 +179,24 @@ export default function Today() {
       )}
 
       <section className="card">
-        <h2>Readiness</h2>
+        <h2>Training Readiness</h2>
         <div className="field">
-          <label htmlFor="sleep">Sleep score</label>
+          <label htmlFor="readiness">Garmin score</label>
           <input
-            id="sleep"
+            id="readiness"
             type="number"
             min="0"
             max="100"
             inputMode="numeric"
+            autoComplete="off"
             placeholder="0–100"
-            value={sleepScore}
-            onChange={(e) => setSleepScore(e.target.value)}
+            value={readinessInput}
+            onChange={(e) => setReadinessInput(e.target.value)}
           />
-        </div>
-
-        <div className="field">
-          <label>Training load</label>
-          <div className="pill-group" role="group" aria-label="Training load">
-            {LOAD_OPTIONS.map((n) => (
-              <button
-                key={n}
-                type="button"
-                className="pill"
-                aria-pressed={load === n}
-                onClick={() => setLoad(n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-          <p className="hint">1 = easy week so far, 5 = very hard.</p>
-        </div>
-
-        <div className="field">
-          <label>Energy (optional)</label>
-          <div className="pill-group" role="group" aria-label="Energy rating">
-            {ENERGY_OPTIONS.map((n) => (
-              <button
-                key={n}
-                type="button"
-                className="pill"
-                aria-pressed={energy === n}
-                onClick={() => setEnergy(energy === n ? null : n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
+          <p className="hint">
+            Straight from your watch. Garmin already accounts for sleep, recovery time, HRV, acute
+            load and recent rest.
+          </p>
         </div>
       </section>
 
@@ -229,7 +204,7 @@ export default function Today() {
         <section className="card">
           <h2>No session yet</h2>
           <p className="hint">
-            Enter a sleep score or tap a training load and Autopilot will build today's session.
+            Enter today's Garmin Training Readiness score and Autopilot will build the session.
           </p>
         </section>
       )}
@@ -342,7 +317,26 @@ export default function Today() {
         </>
       )}
 
-      {/* Cardio and Rest have no generated plan yet — log them directly. */}
+      {/* Cardio has no generated plan yet, but readiness still sets its length. */}
+      {recommendation && selectedType === 'Cardio' && (
+        <>
+          <div className="session-meta">
+            <div className="meta-stat">
+              <div className="meta-value">{duration.cardioMinutes}</div>
+              <div className="meta-label">Target minutes</div>
+            </div>
+            <div className="meta-stat">
+              <div className="meta-value">{band}</div>
+              <div className="meta-label">Readiness</div>
+            </div>
+          </div>
+          <p className="hint" style={{ marginBottom: 14 }}>
+            Aim for {duration.cardioMinutes} minutes at a pace you could hold a conversation
+            through. Specific cardio sessions are not generated yet.
+          </p>
+        </>
+      )}
+
       {recommendation && selectedType !== 'Lift' && (
         <button type="button" className="btn-primary" onClick={logSimpleSession}>
           {justLogged ? 'Logged ✓' : `Log ${selectedType.toLowerCase()} session`}

@@ -27,6 +27,9 @@ preview` serves that build locally to test the PWA install flow.
 - `npm run check:blocks` builds blocks and run steps for every band, asserting
   the structure (warm up first, explicit rest, nothing dropped) and the
   finish-screen maths (volume, records, first-time-is-not-a-record).
+- `npm run check:migration` runs `db.js` against a fake localStorage holding
+  pre-Garmin data and asserts the upgrade preserves everything (see Migration
+  below).
 
 ## Structure
 
@@ -38,7 +41,7 @@ src/
     seed.js         # first-run data: profile, equipment, settings
     db.js           # one function per collection (getProfile, addSession,
                     # etc.) — pages call these, never storage.js directly
-    readiness.js     # pure functions: readiness score, band, and the
+    readiness.js     # pure functions: band, duration target, and the
                     # Lift/Cardio/Rest + location recommendation
     weekly.js       # Monday-start weekly session counts
     exercises.js    # the shipped exercise library + equipment/cap metadata
@@ -51,7 +54,7 @@ src/
     Today.jsx       # readiness, recommendation, block overview, START WORKOUT
     Run.jsx         # guided one-thing-at-a-time run mode
     Finish.jsx      # post-session payoff screen
-    Settings.jsx    # readiness weights, band thresholds, targets, variety
+    Settings.jsx    # band thresholds, weekly + duration targets, variety
   components/
     NavBar.jsx      # bottom tab bar (Today / Settings)
     HistoryList.jsx # recent sessions list
@@ -98,8 +101,9 @@ Six collections, each just a JSON value under its own `localStorage` key
 - `sessionHistory` — completed sessions (`type`, `location`, `date`); lift
   sessions also carry `templateId` and an `exercises` array with the sets
   actually performed
-- `readinessLog` — one entry per day (`sleepScore`, `load`, `energy`, `score`, `band`)
-- `settings` — `readinessWeights`, `bands` (score thresholds), `freshnessWindow`
+- `readinessLog` — one entry per day (`score`, `band`, `source`); pre-Garmin
+  entries also retain their original `sleepScore` / `load` / `energy`
+- `settings` — `bands` (score thresholds), `durationTargets`, `freshnessWindow`
 - `meta` — non-user bookkeeping; currently which library version this browser
   has been migrated to
 
@@ -116,17 +120,54 @@ directly, so swapping in a real API later means rewriting `storage.js` and
 
 ### Readiness → recommendation
 
-1. `computeReadiness()` turns whichever inputs you entered (sleep score,
-   training load, optional energy) into a 0-100 score, weighted by
-   `settings.readinessWeights`. Missing inputs are dropped and the
-   remaining weights are rebalanced, so you can skip the energy rating.
-2. `scoreToBand()` maps that score to Green (≥80) / Yellow (≥55) /
+Readiness is **Garmin's Training Readiness score**, entered by hand — one
+field, 0-100. Garmin already folds in sleep, recovery time, HRV, acute load,
+recent sleep and recent rest, so the app takes the number as given rather than
+computing its own from separate inputs.
+
+1. `scoreToBand()` maps the score to Green (≥80) / Yellow (≥55) /
    Orange (≥35) / Red, using the thresholds in `settings.bands`.
-3. `recommendSession()` picks a session **type** (Lift, Cardio, or
+2. `recommendSession()` picks a session **type** (Lift, Cardio, or
    Rest/Recovery) using the band plus how many lifts/cardio sessions are
    already logged this week against `profile.goals`, and a **location**
-   (Work on weekdays, Home on weekends, overridable). It returns a
-   one-line rationale.
+   (Work on weekdays, Home on weekends, overridable).
+3. `durationTargetFor()` reads `settings.durationTargets[band]` for how much
+   session the score bought.
+
+The one score drives two independent axes:
+
+| | set by | what it controls |
+|---|---|---|
+| **Intensity** | the band, via `BAND_PRESCRIPTION` | reps, RPE, sets per exercise |
+| **Duration** | `settings.durationTargets[band]` | exercises in a lift, minutes of cardio |
+
+Defaults run Green 6 exercises / 45 min cardio down to Red 3 / 15, and every
+number is editable in Settings. Lift exercises are capped at
+`MAX_LIFT_EXERCISES` (the number of slots a template has) so the setting can
+never promise more than the generator can deliver. When a target is smaller
+than the template, slots are dropped **from the back** — a short session loses
+its carry and core finisher, never its main lift.
+
+### Migration from the old readiness system
+
+The multi-input scoring (sleep + training load + energy, weighted and
+renormalized) is gone, not deprecated — `computeReadiness()` and
+`settings.readinessWeights` are deleted rather than left unused.
+
+Existing installs upgrade in place, guarded by `meta.settingsVersion`:
+
+- **Settings** drop `readinessWeights` and gain `durationTargets`. Anything you
+  had tuned — band thresholds, freshness window, weekly goals — is preserved.
+- **Readiness log** entries keep their `score` and `band` and gain
+  `source: 'legacy'`, so an old computed score is never mistaken for a Garmin
+  reading. Their original `sleepScore` / `load` / `energy` are kept as a record
+  of what actually happened that day. An entry missing a `band` has one
+  recovered from its score using your thresholds.
+- **Session history** is untouched, so old sessions still feed freshness
+  rotation and weight pre-fill.
+
+Both migrations are idempotent. `npm run check:migration` asserts all of the
+above against a simulated pre-Garmin install.
 
 ### Lift generation
 

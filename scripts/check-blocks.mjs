@@ -2,6 +2,7 @@
 // Run with `npm run check:blocks`.
 
 import { seedExerciseLibrary } from '../src/lib/exercises.js';
+import { seedSettings } from '../src/lib/seed.js';
 import { generateLiftSession } from '../src/lib/liftGenerator.js';
 import { buildBlocks, buildRunSteps } from '../src/lib/blocks.js';
 import { summariseSession, findRecords } from '../src/lib/sessionStats.js';
@@ -17,7 +18,13 @@ const assert = (cond, msg) => {
 
 console.log('=== block structure ===');
 for (const band of ['Green', 'Yellow', 'Orange']) {
-  const session = generateLiftSession({ location: 'Work', band, library, seed: 21 });
+  const session = generateLiftSession({
+    location: 'Work',
+    band,
+    library,
+    exerciseCount: seedSettings.durationTargets[band].liftExercises,
+    seed: 21,
+  });
   const { blocks, estimatedMinutes } = buildBlocks(session);
   console.log(`\n${band} — ${estimatedMinutes} min est.`);
   for (const b of blocks) {

@@ -45,24 +45,36 @@ export const seedEquipment = {
 // Phase 0 would be stuck with the empty library that shipped then.
 export const EXERCISE_LIBRARY_VERSION = 1;
 
+// Bump when seedSettings changes shape in a way existing installs must adopt.
+// v2 dropped `readinessWeights` (the old multi-input scoring is gone) and
+// added `durationTargets`. See migrateSettings() in db.js.
+export const SETTINGS_VERSION = 2;
+
 // Readiness config, edited on the Settings screen. Weekly targets live on
 // `profile.goals` instead of here (see comment above) so there is only one
 // place that number is stored.
 export const seedSettings = {
-  // How much each input contributes to the 0-100 readiness score. Inputs
-  // that are missing on a given day (e.g. no energy rating) are simply
-  // dropped and the remaining weights are renormalized — see
-  // computeReadiness() in readiness.js.
-  readinessWeights: {
-    sleep: 0.6,
-    load: 0.3,
-    energy: 0.1,
-  },
-  // Lower bound (inclusive) for each band. Anything below `orange` is Red.
+  // Lower bound (inclusive) for each band, applied to the Garmin Training
+  // Readiness score. Anything below `orange` is Red.
   bands: {
     green: 80,
     yellow: 55,
     orange: 35,
+  },
+  // Session SIZE per band — the duration axis. Intensity (reps/RPE/sets per
+  // exercise) is separate and lives in liftGenerator's BAND_PRESCRIPTION;
+  // this decides how much work the session contains.
+  //
+  //   liftExercises  how many exercises a generated lift includes
+  //   cardioMinutes  target minutes for a cardio session
+  //
+  // Red still carries a cardio target because Red recommends recovery, and an
+  // easy 15 minutes is a legitimate way to spend a recovery day.
+  durationTargets: {
+    Green: { liftExercises: 6, cardioMinutes: 45 },
+    Yellow: { liftExercises: 5, cardioMinutes: 30 },
+    Orange: { liftExercises: 4, cardioMinutes: 20 },
+    Red: { liftExercises: 3, cardioMinutes: 15 },
   },
   // How many recent lift sessions the generator looks back over before it is
   // willing to reuse a variationGroup. 0 disables freshness filtering.
