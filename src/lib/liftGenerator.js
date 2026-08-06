@@ -73,6 +73,11 @@ export const TEMPLATES = [
   },
 ];
 
+// The most exercises any template can supply. A duration target above this is
+// silently capped by slice(), so the Settings UI clamps to it rather than
+// offering a number that quietly does nothing.
+export const MAX_LIFT_EXERCISES = Math.max(...TEMPLATES.map((t) => t.slots.length));
+
 // Alternate off whatever the last logged lift session used. Falls back to A.
 export function nextTemplate(sessionHistory) {
   const lastLift = sessionHistory.find((s) => s.type === 'Lift' && s.templateId);
@@ -80,9 +85,13 @@ export function nextTemplate(sessionHistory) {
   return TEMPLATES.find((t) => t.id !== lastLift.templateId) ?? TEMPLATES[0];
 }
 
-// -- readiness -> volume & intensity --------------------------------------
+// -- readiness -> INTENSITY ------------------------------------------------
 // Green trades reps for load, Yellow is the honest middle, Orange keeps the
-// session but strips volume. Red never reaches here (Today recommends Rest).
+// session but backs off. Red never reaches here (Today recommends Rest).
+//
+// This is the intensity axis only. How LONG the session is — how many
+// exercises it contains — is the duration axis, configured per band in
+// settings.durationTargets and passed in as `exerciseCount`.
 
 export const BAND_PRESCRIPTION = {
   Green: {
@@ -91,7 +100,6 @@ export const BAND_PRESCRIPTION = {
     accessoryReps: [8, 10],
     sets: { primary: 5, secondary: 4, accessory: 3 },
     rpe: '8–9',
-    slotLimit: 6,
     note: 'Readiness is Green: push the load, keep reps low and crisp.',
   },
   Yellow: {
@@ -100,7 +108,6 @@ export const BAND_PRESCRIPTION = {
     accessoryReps: [12, 15],
     sets: { primary: 4, secondary: 3, accessory: 3 },
     rpe: '7–8',
-    slotLimit: 6,
     note: 'Readiness is Yellow: standard working sets, leave a rep or two in reserve.',
   },
   Orange: {
@@ -109,7 +116,6 @@ export const BAND_PRESCRIPTION = {
     accessoryReps: [12, 15],
     sets: { primary: 2, secondary: 2, accessory: 2 },
     rpe: '5–6',
-    slotLimit: 4,
     note: 'Readiness is Orange: cut the volume, stay well short of failure, focus on clean reps.',
   },
 };
@@ -345,6 +351,7 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride }) {
  * @param {object[]} args.library        exercise library
  * @param {object[]} args.sessionHistory newest-first
  * @param {number}   args.freshnessWindow how many past lift sessions to avoid repeating
+ * @param {number}   args.exerciseCount  how many exercises to include (duration)
  * @param {number}   args.seed           RNG seed; change it to regenerate
  * @param {object}   [args.template]     force a template (otherwise alternates)
  */
@@ -354,6 +361,7 @@ export function generateLiftSession({
   library,
   sessionHistory = [],
   freshnessWindow = 3,
+  exerciseCount = 5,
   seed = 1,
   template: forcedTemplate,
 }) {
@@ -364,8 +372,10 @@ export function generateLiftSession({
   const recentGroups = recentVariationGroups(sessionHistory, freshnessWindow);
   const recency = groupRecency(sessionHistory);
 
-  // Orange trims the session from the back, so the primary work survives.
-  const slots = template.slots.slice(0, plan.slotLimit);
+  // Duration: trim from the BACK of the template so the primary strength work
+  // always survives — a short session should lose its carry and core finisher,
+  // not its main lift. At least one slot always remains.
+  const slots = template.slots.slice(0, Math.max(1, exerciseCount));
 
   const usedGroups = new Set();
   const usedIds = new Set();

@@ -3,6 +3,7 @@
 // assert the invariants that matter. Run with `npm run check:generator`.
 
 import { seedExerciseLibrary } from '../src/lib/exercises.js';
+import { seedSettings } from '../src/lib/seed.js';
 import {
   generateLiftSession,
   swapExercise,
@@ -42,7 +43,8 @@ function show(session) {
 console.log('\n=== bands x locations ===');
 for (const location of ['Work', 'Home']) {
   for (const band of ['Green', 'Yellow', 'Orange']) {
-    const s = generateLiftSession({ location, band, library, seed: 42 });
+    const exerciseCount = seedSettings.durationTargets[band].liftExercises;
+    const s = generateLiftSession({ location, band, library, exerciseCount, seed: 42 });
     console.log();
     show(s);
 
@@ -57,7 +59,10 @@ for (const location of ['Work', 'Home']) {
     );
     // Orange must be lower volume than Green.
     if (band === 'Orange') {
-      assert(s.exercises.length <= 4, `Orange should trim to <=4 slots, got ${s.exercises.length}`);
+      assert(
+        s.exercises.length <= exerciseCount,
+        `Orange should honour its ${exerciseCount}-exercise target, got ${s.exercises.length}`,
+      );
     }
 
     // A primary slot should not be filled by an isolation movement when a

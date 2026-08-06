@@ -1,13 +1,22 @@
 import { useId, useState } from 'react';
 import { getProfile, getSettings, updateProfile, updateSettings } from '../lib/db.js';
+import { MAX_LIFT_EXERCISES } from '../lib/liftGenerator.js';
+
+const BAND_ORDER = ['Green', 'Yellow', 'Orange', 'Red'];
 
 export default function Settings() {
   const [profile, setProfile] = useState(getProfile);
   const [settings, setSettings] = useState(getSettings);
   const [saved, setSaved] = useState(false);
 
-  function setWeight(key, value) {
-    setSettings((s) => ({ ...s, readinessWeights: { ...s.readinessWeights, [key]: value } }));
+  function setDuration(band, key, value) {
+    setSettings((s) => ({
+      ...s,
+      durationTargets: {
+        ...s.durationTargets,
+        [band]: { ...s.durationTargets[band], [key]: value },
+      },
+    }));
   }
 
   function setBand(key, value) {
@@ -21,8 +30,8 @@ export default function Settings() {
   function handleSave(e) {
     e.preventDefault();
     updateSettings({
-      readinessWeights: settings.readinessWeights,
       bands: settings.bands,
+      durationTargets: settings.durationTargets,
       freshnessWindow: settings.freshnessWindow,
     });
     updateProfile({ goals: profile.goals });
@@ -36,36 +45,10 @@ export default function Settings() {
 
       <form onSubmit={handleSave}>
         <section className="card">
-          <h2>Readiness weights</h2>
-          <p className="hint">
-            How much each input contributes to the score. They don't need to sum to 1 — missing
-            inputs (e.g. no energy rating) are dropped and the rest are rebalanced automatically.
-          </p>
-          <div className="settings-grid">
-            <NumberField
-              label="Sleep"
-              value={settings.readinessWeights.sleep}
-              step="0.05"
-              onChange={(v) => setWeight('sleep', v)}
-            />
-            <NumberField
-              label="Load"
-              value={settings.readinessWeights.load}
-              step="0.05"
-              onChange={(v) => setWeight('load', v)}
-            />
-            <NumberField
-              label="Energy"
-              value={settings.readinessWeights.energy}
-              step="0.05"
-              onChange={(v) => setWeight('energy', v)}
-            />
-          </div>
-        </section>
-
-        <section className="card">
           <h2>Band thresholds</h2>
-          <p className="hint">Minimum score (0-100) to reach each band. Below Orange is Red.</p>
+          <p className="hint">
+            Minimum Garmin Training Readiness score to reach each band. Below Orange is Red.
+          </p>
           <div className="settings-grid">
             <NumberField
               label="Green ≥"
@@ -102,6 +85,37 @@ export default function Settings() {
         </section>
 
         <section className="card">
+          <h2>Session length</h2>
+          <p className="hint">
+            How much session each band buys. This is the duration axis — how many exercises a lift
+            contains and how long to spend on cardio. How <em>hard</em> the work is (reps, sets,
+            RPE) is set by the band itself and is not configured here. A lift tops out at{' '}
+            {MAX_LIFT_EXERCISES} exercises — that is how many movement slots a template has.
+          </p>
+          {BAND_ORDER.map((band) => (
+            <div key={band} style={{ marginTop: 16 }}>
+              <div className={`eyebrow band-${band}`} style={{ marginBottom: 8 }}>
+                {band}
+              </div>
+              <div className="settings-grid">
+                <NumberField
+                  label="Lift exercises"
+                  value={settings.durationTargets[band].liftExercises}
+                  max={MAX_LIFT_EXERCISES}
+                  onChange={(v) => setDuration(band, 'liftExercises', v)}
+                />
+                <NumberField
+                  label="Cardio minutes"
+                  value={settings.durationTargets[band].cardioMinutes}
+                  step="5"
+                  onChange={(v) => setDuration(band, 'cardioMinutes', v)}
+                />
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <section className="card">
           <h2>Exercise variety</h2>
           <p className="hint">
             How many recent lift sessions the generator looks back over before it will reuse a
@@ -126,7 +140,7 @@ export default function Settings() {
   );
 }
 
-function NumberField({ label, value, onChange, step = '1' }) {
+function NumberField({ label, value, onChange, step = '1', max }) {
   // Tie the label to the input so screen readers announce it (and so the
   // label is a tap target for the field on touch devices).
   const id = useId();
@@ -139,8 +153,12 @@ function NumberField({ label, value, onChange, step = '1' }) {
         inputMode="decimal"
         step={step}
         min="0"
+        max={max}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        // Clamp on the way in so a typed-over-the-max value cannot be saved.
+        onChange={(e) =>
+          onChange(max == null ? Number(e.target.value) : Math.min(Number(e.target.value), max))
+        }
       />
     </div>
   );
