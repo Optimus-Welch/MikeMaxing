@@ -1,0 +1,47 @@
+name: CI
+
+# Runs the same checks a merge should be gated on. Separate from deploy.yml,
+# which only fires on push to main — that workflow publishes, this one verifies.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # Also verify main directly, so a merge (or a direct push) that somehow
+  # skipped PR checks still gets caught.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR makes the previous run obsolete — cancel it rather than
+# paying for a result nobody will read. (Deploy does the opposite, on purpose:
+# a half-finished deployment must never be cancelled.)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, checks, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm ci` rather than `npm install`: installs exactly the lockfile and
+      # fails if package.json and package-lock.json have drifted.
+      - name: Install
+        run: npm ci
+
+      # lint + library + generator + blocks + migration + qol
+      - name: Checks
+        run: npm run check
+
+      # A broken build should block a merge just as surely as a failed check.
+      - name: Build
+        run: npm run build

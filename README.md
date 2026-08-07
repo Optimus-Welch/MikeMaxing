@@ -34,6 +34,17 @@ preview` serves that build locally to test the PWA install flow.
   (always an external search, never embedded media) and the chime's mute and
   priming gates.
 
+## CI
+
+`.github/workflows/ci.yml` runs `npm ci`, `npm run check` and `npm run build`
+on every pull request, on pushes to `main`, and on demand. It is separate from
+`deploy.yml`: that one publishes, this one verifies.
+
+Note that a workflow only makes checks **run**. To make a red result actually
+block a merge, mark the `Lint, checks, build` job as a required status check in
+the repository's branch-protection settings — that part is a GitHub setting,
+not something the workflow file can grant itself.
+
 ## Structure
 
 ```
