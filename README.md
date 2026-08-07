@@ -15,7 +15,7 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
-`npm run check` runs the linter plus three data/logic checks:
+`npm run check` runs the linter plus five data/logic checks:
 
 - `npm run check:library` validates the exercise library (no exercise is
   tagged for a location that lacks its equipment) and prints per-location
@@ -30,6 +30,9 @@ preview` serves that build locally to test the PWA install flow.
 - `npm run check:migration` runs `db.js` against a fake localStorage holding
   pre-Garmin data and asserts the upgrade preserves everything (see Migration
   below).
+- `npm run check:qol` asserts the swap-alternatives filters, the demo link-out
+  (always an external search, never embedded media) and the chime's mute and
+  priming gates.
 
 ## Structure
 
@@ -50,6 +53,8 @@ src/
     warmups.js      # warm-up / cool-down drills, keyed by movement pattern
     sessionStats.js # finish-screen maths: volume, muscles, records
     muscleMap.js    # muscle name -> diagram region mapping
+    demos.js        # where to send someone to see how a lift is performed
+    chime.js        # WebAudio timer chime + iOS autoplay unlocking
   pages/
     Today.jsx       # readiness, recommendation, block overview, START WORKOUT
     Run.jsx         # guided one-thing-at-a-time run mode
@@ -60,6 +65,9 @@ src/
     HistoryList.jsx # recent sessions list
     BlockList.jsx   # session overview: blocks, rounds, explicit rest
     MuscleMap.jsx   # front/back body diagram drawn as SVG
+    ExercisePicker.jsx # swap sheet: alternatives for the same muscles
+    SessionOverlay.jsx # full workout seen from inside run mode
+    DemoLink.jsx    # "how to" button
 scripts/           # dev-only data and logic checks (see npm run check)
 ```
 
@@ -89,6 +97,46 @@ a backgrounded tab stops firing intervals, but wall-clock time does not.
 much each region was worked, and any weight or rep records beaten. A first-ever
 performance is deliberately *not* a record.
 
+### Swapping an exercise
+
+`alternativesFor()` lists every exercise that shares a **primary muscle** with
+the one you are replacing, is possible with the equipment at your current
+location, and — at a capped location — obeys the same `capFriendly` rule
+generation uses, so the list can never offer something the generator would
+refuse to pick. Same-pattern options sort first.
+
+The picker is a sheet, not a route. Opening it from run mode leaves the run
+screen mounted underneath, so closing it returns you to the same set with any
+rest timer still counting. Picking runs `swapExerciseTo()`, which prescribes
+the replacement through the same code path generation uses — a swapped-in lift
+is indistinguishable from one the generator chose.
+
+### Exercise demonstrations
+
+`demoFor(exercise)` returns where to send someone who wants to see the lift.
+Today that is always a YouTube **search** opened in a new tab: nothing is
+embedded, copied, hotlinked or proxied from any fitness app or other
+copyrighted source.
+
+The indirection is the point. Give an exercise a `demoUrl`, or add an entry to
+`DEMO_CLIPS`, and it starts returning `kind: 'clip'` instead — `DemoLink.jsx`
+is then the only file that needs an inline player. No caller changes.
+
+### Timer chimes
+
+A two-note chime plays when a rest timer runs out, synthesised with an
+oscillator rather than loaded from a file — nothing to fetch, and it works
+offline in the installed PWA without extra precache entries.
+
+iOS Safari (including a home-screen PWA) will not produce sound unless an
+AudioContext was unlocked inside a real user gesture, and a chime fired from a
+timer minutes later is not a gesture. `initAudio()` is therefore called on the
+**START WORKOUT** tap — the one guaranteed tap before any rest can end. It
+resumes the context and runs a silent blip through it, which is what actually
+satisfies the unlock. Backgrounding suspends the context again, so `playChime()`
+resumes it before playing; that is allowed once unlocked. Mute lives in
+Settings.
+
 ### Data model
 
 Six collections, each just a JSON value under its own `localStorage` key
@@ -103,7 +151,8 @@ Six collections, each just a JSON value under its own `localStorage` key
   actually performed
 - `readinessLog` — one entry per day (`score`, `band`, `source`); pre-Garmin
   entries also retain their original `sleepScore` / `load` / `energy`
-- `settings` — `bands` (score thresholds), `durationTargets`, `freshnessWindow`
+- `settings` — `bands` (score thresholds), `durationTargets`, `freshnessWindow`,
+  `soundEnabled`
 - `meta` — non-user bookkeeping; currently which library version this browser
   has been migrated to
 

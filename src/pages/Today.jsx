@@ -19,10 +19,12 @@ import {
   durationTargetFor,
 } from '../lib/readiness.js';
 import { weeklyCounts, todayISO } from '../lib/weekly.js';
-import { generateLiftSession } from '../lib/liftGenerator.js';
+import { generateLiftSession, swapExerciseTo } from '../lib/liftGenerator.js';
 import { buildBlocks, createRunState } from '../lib/blocks.js';
 import HistoryList from '../components/HistoryList.jsx';
 import BlockList from '../components/BlockList.jsx';
+import ExercisePicker from '../components/ExercisePicker.jsx';
+import { initAudio } from '../lib/chime.js';
 
 const SESSION_TYPES = ['Lift', 'Cardio', 'Rest'];
 const LOCATIONS = ['Work', 'Home'];
@@ -48,6 +50,13 @@ export default function Today() {
   const [forceLiftOnRed, setForceLiftOnRed] = useState(false);
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e9));
   const [justLogged, setJustLogged] = useState(false);
+  // Exercises the user swapped in on the preview, keyed by SLOT INDEX in the
+  // generated session. Index rather than exerciseId because swapping the same
+  // slot twice would otherwise leave a stale key whose resolution depends on
+  // object iteration order. Kept separate from generation so a swap never
+  // re-runs the generator, and regenerating starts clean.
+  const [swaps, setSwaps] = useState({});
+  const [swapTarget, setSwapTarget] = useState(null);
 
   const today = useMemo(() => new Date(), []);
 
@@ -110,14 +119,32 @@ export default function Today() {
     seed,
   ]);
 
+  // Apply any preview swaps on top of the generated session.
+  const plannedSession = useMemo(() => {
+    if (!liftSession) return null;
+    let out = liftSession;
+    for (const [slot, chosen] of Object.entries(swaps)) {
+      const idx = Number(slot);
+      if (!out.exercises[idx]) continue;
+      out = swapExerciseTo({ session: out, index: idx, exercise: chosen, seed });
+    }
+    return out;
+  }, [liftSession, swaps, seed]);
+
   const { blocks, estimatedMinutes } = useMemo(
-    () => (liftSession ? buildBlocks(liftSession) : { blocks: [], estimatedMinutes: 0 }),
-    [liftSession],
+    () => (plannedSession ? buildBlocks(plannedSession) : { blocks: [], estimatedMinutes: 0 }),
+    [plannedSession],
   );
 
   function startWorkout() {
+    // Prime the audio context inside this tap. iOS Safari — including the
+    // installed PWA — only allows later, timer-driven chimes if an
+    // AudioContext was unlocked during a real user gesture, and this is the
+    // one guaranteed tap before any rest timer can end.
+    if (settings.soundEnabled !== false) initAudio();
+
     const runState = createRunState({
-      session: liftSession,
+      session: plannedSession,
       location: selectedLocation,
       band,
       date: todayISO(today),
@@ -304,13 +331,16 @@ export default function Today() {
             </p>
           )}
 
-          <BlockList blocks={blocks} />
+          <BlockList blocks={blocks} onSwap={(item) => setSwapTarget(item)} />
 
           <button
             type="button"
             className="btn-secondary"
             style={{ width: '100%', marginBottom: 14 }}
-            onClick={() => setSeed(Math.floor(Math.random() * 1e9))}
+            onClick={() => {
+              setSwaps({});
+              setSeed(Math.floor(Math.random() * 1e9));
+            }}
           >
             Regenerate session
           </button>
@@ -355,6 +385,26 @@ export default function Today() {
         <h2>Recent sessions</h2>
         <HistoryList sessions={sessionHistory} />
       </section>
+
+      {swapTarget && (
+        <ExercisePicker
+          current={swapTarget}
+          location={selectedLocation}
+          library={library}
+          onPick={(chosen) => {
+            // Resolve the slot against the *generated* session, whose indices
+            // are stable regardless of what has already been swapped.
+            const idx = liftSession.exercises.findIndex(
+              (e, i) =>
+                e.exerciseId === swapTarget.exerciseId ||
+                plannedSession.exercises[i]?.exerciseId === swapTarget.exerciseId,
+            );
+            if (idx !== -1) setSwaps((prev) => ({ ...prev, [idx]: chosen }));
+            setSwapTarget(null);
+          }}
+          onClose={() => setSwapTarget(null)}
+        />
+      )}
     </>
   );
 }

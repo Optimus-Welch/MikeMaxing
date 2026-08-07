@@ -79,6 +79,15 @@ export const LOCATION_LOAD_CAPS = {
 // doing. The generator prefers capFriendly options for these at Home.
 export const CAP_SENSITIVE_PATTERNS = ['squat', 'hinge', 'unilateral'];
 
+// Human-readable capStrategy labels for the UI — the raw tokens are camelCase
+// identifiers and should never be shown to a person.
+export const CAP_STRATEGY_LABELS = {
+  unilateral: 'one side at a time',
+  tempo: 'tempo',
+  highRep: 'high rep',
+  elevatedRange: 'extra range',
+};
+
 export const seedExerciseLibrary = [
   // ---------------------------------------------------------------- SQUAT
   {
