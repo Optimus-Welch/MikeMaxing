@@ -13,7 +13,8 @@
     "check:blocks": "node scripts/check-blocks.mjs",
     "check:migration": "node scripts/check-migration.mjs",
     "check:qol": "node scripts/check-qol.mjs",
-    "check": "npm run lint && npm run check:library && npm run check:generator && npm run check:blocks && npm run check:migration && npm run check:qol"
+    "check:weekly": "node scripts/check-weekly.mjs",
+    "check": "npm run lint && npm run check:library && npm run check:generator && npm run check:blocks && npm run check:migration && npm run check:qol && npm run check:weekly"
   },
   "dependencies": {
     "react": "^19.2.7",
