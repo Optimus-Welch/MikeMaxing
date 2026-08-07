@@ -491,30 +491,107 @@ export function swapExercise({
   const rng = makeRng(seed);
   const exercise = pick(candidates, rng);
 
-  const replacement = {
+  return replaceExerciseAt(session, index, exercise, { relaxed, rng });
+}
+
+// -- explicit swap ---------------------------------------------------------
+
+/**
+ * Build the session-entry shape for one exercise in one slot. Shared by
+ * generation, random swap and pick-from-list swap so all three produce
+ * identical objects — a swapped-in lift is prescribed exactly as if the
+ * generator had chosen it.
+ */
+export function makeSessionExercise({ exercise, emphasis, band, rng, relaxed = false }) {
+  return {
     exerciseId: exercise.id,
     name: exercise.name,
     pattern: exercise.movementPattern,
     patternLabel: PATTERN_LABELS[exercise.movementPattern],
     variationGroup: exercise.variationGroup,
-    emphasis: target.emphasis,
+    emphasis,
     primaryMuscles: exercise.primaryMuscles,
     loadNotes: exercise.loadNotes ?? null,
     capStrategy: exercise.capStrategy ?? null,
     repeatedGroup: relaxed,
-    ...prescribeFor({ exercise, emphasis: target.emphasis, band: session.band, rng }),
+    ...prescribeFor({ exercise, emphasis, band, rng }),
   };
+}
 
-  const exercises = session.exercises.map((e, i) => (i === index ? replacement : e));
-
-  // Re-resolve superset pairing, since names may have changed.
-  for (let i = 0; i < exercises.length; i++) {
-    if (exercises[i].schemeId === 'superset' && i < exercises.length - 1) {
-      exercises[i] = { ...exercises[i], supersetWith: exercises[i + 1].name };
-    } else if (exercises[i].supersetWith) {
-      exercises[i] = { ...exercises[i], supersetWith: undefined };
+function reresolveSupersets(exercises) {
+  return exercises.map((ex, i) => {
+    if (ex.schemeId === 'superset' && i < exercises.length - 1) {
+      return { ...ex, supersetWith: exercises[i + 1].name };
     }
-  }
+    return ex.supersetWith ? { ...ex, supersetWith: undefined } : ex;
+  });
+}
 
+function replaceExerciseAt(session, index, exercise, { relaxed = false, rng }) {
+  const target = session.exercises[index];
+  const replacement = makeSessionExercise({
+    exercise,
+    emphasis: target.emphasis,
+    band: session.band,
+    rng,
+    relaxed,
+  });
+  const exercises = reresolveSupersets(
+    session.exercises.map((e, i) => (i === index ? replacement : e)),
+  );
   return { ...session, exercises };
+}
+
+/**
+ * Swap a slot to a specific exercise the user picked from the alternatives
+ * list. Unlike swapExercise() this makes no choice of its own.
+ */
+export function swapExerciseTo({ session, index, exercise, seed = 1 }) {
+  if (!session.exercises[index] || !exercise) return session;
+  return replaceExerciseAt(session, index, exercise, { rng: makeRng(seed) });
+}
+
+/**
+ * Alternatives for a slot, for the user to choose between.
+ *
+ * Filters, in order:
+ *   1. shares a PRIMARY muscle with the current exercise — the point is to
+ *      train the same thing, so movement pattern alone is too loose (a carry
+ *      and a row are both "pull") and too tight (a goblet squat and a leg
+ *      press are different patterns but the same job)
+ *   2. possible with the equipment at this location
+ *   3. at a capped location, cap-sensitive patterns keep only capFriendly
+ *      options — the same rule generation already applies, so the list can
+ *      never offer something the generator would refuse to pick
+ *
+ * Sorted with same-pattern options first, then by tier, so the closest
+ * like-for-like swaps are at the top. The current exercise is excluded.
+ */
+export function alternativesFor({ exercise, location, library, excludeIds = [] }) {
+  if (!exercise) return [];
+
+  const current = library.find((e) => e.id === exercise.exerciseId) ?? exercise;
+  const currentPrimary = new Set(current.primaryMuscles ?? []);
+  const skip = new Set([current.id ?? exercise.exerciseId, ...excludeIds]);
+
+  const caps = LOCATION_LOAD_CAPS[location] ?? {};
+  const capped = caps.dumbbellPerHand != null || caps.barbellTotal != null;
+  const capSensitive = capped && CAP_SENSITIVE_PATTERNS.includes(current.movementPattern);
+
+  return library
+    .filter((candidate) => {
+      if (skip.has(candidate.id)) return false;
+      if (!isAvailableAt(candidate, location)) return false;
+      if (!(candidate.primaryMuscles ?? []).some((m) => currentPrimary.has(m))) return false;
+      // Honour the Home weight cap exactly as generation does.
+      if (capSensitive && CAP_SENSITIVE_PATTERNS.includes(candidate.movementPattern)) {
+        return candidate.capFriendly === true;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const samePattern = (x) => (x.movementPattern === current.movementPattern ? 0 : 1);
+      if (samePattern(a) !== samePattern(b)) return samePattern(a) - samePattern(b);
+      return (TIER_RANK[b.tier] ?? 0) - (TIER_RANK[a.tier] ?? 0);
+    });
 }

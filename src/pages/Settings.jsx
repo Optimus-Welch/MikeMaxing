@@ -33,6 +33,7 @@ export default function Settings() {
       bands: settings.bands,
       durationTargets: settings.durationTargets,
       freshnessWindow: settings.freshnessWindow,
+      soundEnabled: settings.soundEnabled,
     });
     updateProfile({ goals: profile.goals });
     setSaved(true);
@@ -113,6 +114,30 @@ export default function Settings() {
               </div>
             </div>
           ))}
+        </section>
+
+        <section className="card">
+          <h2>Sound</h2>
+          <p className="hint">
+            A chime plays when a rest timer runs out. Audio is unlocked when you tap START WORKOUT —
+            iOS will not allow a sound that no tap led to, so chimes stay silent until a session
+            begins.
+          </p>
+          <div className="toggle-row">
+            <span className="toggle-label">Rest timer chime</span>
+            <button
+              type="button"
+              className="toggle"
+              role="switch"
+              aria-checked={settings.soundEnabled !== false}
+              aria-label="Rest timer chime"
+              onClick={() =>
+                setSettings((s) => ({ ...s, soundEnabled: !(s.soundEnabled !== false) }))
+              }
+            >
+              <span className="toggle-knob" />
+            </button>
+          </div>
         </section>
 
         <section className="card">

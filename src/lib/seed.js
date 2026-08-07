@@ -79,4 +79,6 @@ export const seedSettings = {
   // How many recent lift sessions the generator looks back over before it is
   // willing to reuse a variationGroup. 0 disables freshness filtering.
   freshnessWindow: 3,
+  // Audible chime when a rest timer ends. Default on.
+  soundEnabled: true,
 };
