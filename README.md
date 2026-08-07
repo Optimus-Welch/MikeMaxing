@@ -15,7 +15,7 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
-`npm run check` runs the linter plus five data/logic checks:
+`npm run check` runs the linter plus six data/logic checks:
 
 - `npm run check:library` validates the exercise library (no exercise is
   tagged for a location that lacks its equipment) and prints per-location
@@ -33,6 +33,11 @@ preview` serves that build locally to test the PWA install flow.
 - `npm run check:qol` asserts the swap-alternatives filters, the demo link-out
   (always an external search, never embedded media) and the chime's mute and
   priming gates.
+- `npm run check:weekly` re-runs the weekly-count assertions under seven
+  timezones from UTC-11 to UTC+14. Dates are stored as `YYYY-MM-DD` and mean a
+  calendar day on the user's own clock, so they must be parsed with
+  `parseLocalDate()` — `new Date('2026-08-03')` is UTC midnight and silently
+  drops a Monday session west of UTC.
 
 ## CI
 
