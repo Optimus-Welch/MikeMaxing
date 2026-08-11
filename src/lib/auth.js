@@ -1,4 +1,4 @@
-import { supabase, hasCloud } from './supabaseClient.js';
+import { getSupabase, hasCloud } from './supabaseClient.js';
 
 // Passwordless email sign-in. Supabase treats magic-link sign-in and sign-up
 // as the same call, so there is no separate registration step — entering an
@@ -23,7 +23,7 @@ export async function sendMagicLink(email) {
   const trimmed = String(email ?? '').trim();
   if (!trimmed) return { ok: false, error: 'Enter your email address.' };
 
-  const { error } = await supabase.auth.signInWithOtp({
+  const { error } = await getSupabase().auth.signInWithOtp({
     email: trimmed,
     options: { emailRedirectTo: redirectTarget() },
   });
@@ -45,12 +45,12 @@ export async function sendMagicLink(email) {
 
 export async function signOut() {
   if (!hasCloud) return;
-  await supabase.auth.signOut();
+  await getSupabase().auth.signOut();
 }
 
 export async function getSession() {
   if (!hasCloud) return null;
-  const { data } = await supabase.auth.getSession();
+  const { data } = await getSupabase().auth.getSession();
   return data?.session ?? null;
 }
 
@@ -65,7 +65,9 @@ export function onAuthChange(handler) {
   }
 
   getSession().then(handler);
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => handler(session ?? null));
+  const { data } = getSupabase().auth.onAuthStateChange((_event, session) =>
+    handler(session ?? null),
+  );
   return () => data?.subscription?.unsubscribe();
 }
 
