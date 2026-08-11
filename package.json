@@ -17,6 +17,7 @@
     "check": "npm run lint && npm run check:library && npm run check:generator && npm run check:blocks && npm run check:migration && npm run check:qol && npm run check:weekly"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1"
