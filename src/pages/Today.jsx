@@ -24,6 +24,7 @@ import { buildBlocks, createRunState } from '../lib/blocks.js';
 import HistoryList from '../components/HistoryList.jsx';
 import BlockList from '../components/BlockList.jsx';
 import ExercisePicker from '../components/ExercisePicker.jsx';
+import SyncBadge from '../components/SyncBadge.jsx';
 import { initAudio } from '../lib/chime.js';
 
 const SESSION_TYPES = ['Lift', 'Cardio', 'Rest'];
@@ -173,6 +174,8 @@ export default function Today() {
 
   return (
     <>
+      <SyncBadge />
+
       <h1 className="page-title">Today</h1>
       <p className="page-sub">
         {today.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}

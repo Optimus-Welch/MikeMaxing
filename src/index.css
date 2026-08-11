@@ -1148,3 +1148,68 @@ button:focus-visible {
 .toggle[aria-checked='true'] .toggle-knob {
   background: var(--accent-ink);
 }
+
+/* ---- cloud sync -------------------------------------------------------- */
+
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.sync-status.is-ok .sync-dot {
+  background: var(--green);
+}
+.sync-status.is-warn .sync-dot {
+  background: var(--orange);
+}
+.sync-status.is-bad .sync-dot {
+  background: var(--red);
+}
+
+.sync-actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.sync-actions button {
+  flex: 1;
+}
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sync-badge.is-offline .sync-dot {
+  background: var(--orange);
+}
+.sync-badge.is-error .sync-dot {
+  background: var(--red);
+}
+.sync-badge.is-syncing .sync-dot {
+  background: var(--accent);
+}

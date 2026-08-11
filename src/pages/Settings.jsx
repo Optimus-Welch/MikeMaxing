@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { getProfile, getSettings, updateProfile, updateSettings } from '../lib/db.js';
 import { MAX_LIFT_EXERCISES } from '../lib/liftGenerator.js';
+import SyncPanel from '../components/SyncPanel.jsx';
 
 const BAND_ORDER = ['Green', 'Yellow', 'Orange', 'Red'];
 
@@ -43,6 +44,8 @@ export default function Settings() {
   return (
     <>
       <h1 className="page-title">Settings</h1>
+
+      <SyncPanel />
 
       <form onSubmit={handleSave}>
         <section className="card">

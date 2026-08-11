@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { startSync } from './lib/syncStore.js';
 import NavBar from './components/NavBar.jsx';
 import Today from './pages/Today.jsx';
 import Settings from './pages/Settings.jsx';
@@ -8,6 +10,11 @@ import Finish from './pages/Finish.jsx';
 // HashRouter (not BrowserRouter) so deep links/refreshes work once this is
 // installed as a PWA, without needing a server rewrite rule.
 export default function App() {
+  // Start auth + sync once, at the top of the tree. Safe to call repeatedly.
+  useEffect(() => {
+    startSync();
+  }, []);
+
   return (
     <HashRouter>
       <Shell />

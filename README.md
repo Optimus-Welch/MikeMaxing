@@ -15,7 +15,7 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
-`npm run check` runs the linter plus six data/logic checks:
+`npm run check` runs the linter plus seven data/logic checks:
 
 - `npm run check:library` validates the exercise library (no exercise is
   tagged for a location that lacks its equipment) and prints per-location
@@ -33,11 +33,74 @@ preview` serves that build locally to test the PWA install flow.
 - `npm run check:qol` asserts the swap-alternatives filters, the demo link-out
   (always an external search, never embedded media) and the chime's mute and
   priming gates.
+- `npm run check:sync` covers the cloud-sync merge rules (including the case
+  where two devices log a workout before either syncs), the offline queue, the
+  Supabase URL/key guards, and scans tracked files for anything resembling a
+  secret key.
 - `npm run check:weekly` re-runs the weekly-count assertions under seven
   timezones from UTC-11 to UTC+14. Dates are stored as `YYYY-MM-DD` and mean a
   calendar day on the user's own clock, so they must be parsed with
   `parseLocalDate()` — `new Date('2026-08-03')` is UTC midnight and silently
   drops a Monday session west of UTC.
+
+## Cloud sync
+
+Data syncs across devices through Supabase, with passwordless email sign-in.
+**Sign-in is optional** — signed out, the app works exactly as it always did,
+on this device only.
+
+### Setting it up
+
+1. Run `supabase/schema.sql` once in the Supabase SQL editor. It creates the
+   `collections` table and the row-level-security policies.
+2. In **Authentication -> URL Configuration**, add the app's URL to *Redirect
+   URLs* (including the trailing `#/`), e.g.
+   `https://optimus-welch.github.io/MikeMaxing/#/` and
+   `http://localhost:5173/#/` for local development. A magic link whose
+   redirect is not listed silently bounces to the Site URL instead.
+3. Connection details default to the project in `src/lib/supabaseConfig.js`.
+   To point elsewhere, copy `.env.example` to `.env`.
+
+### Keys
+
+Only the **publishable/anon** key ever appears in this repo. It identifies the
+project, not a person, and row-level security is what actually protects the
+data — so RLS is the security boundary, not a second layer behind one. Vite
+inlines `VITE_*` variables into the built JavaScript, so anything configured
+that way is public by construction. The `service_role` (or any `sb_secret_*`)
+key bypasses RLS completely and must never appear here; `assertNotSecretKey()`
+refuses to start if one is supplied, and `check:sync` greps tracked files for
+them.
+
+### How it works
+
+Reads stay **synchronous and local**, which is why nothing above
+`storage.js` changed. Supabase syncs alongside:
+
+- **read** — localStorage, synchronously, signed in or not, online or not
+- **write** — localStorage immediately, then queued for upload
+- **sync** — pull on sign-in, on reconnect, and when the tab becomes visible;
+  merge; flush the queue
+
+Local-first is the design, not a shortcut: a read that awaits a round trip is a
+read that hangs, and this gets used in basement gyms.
+
+**Merging** (`mergeCollections.js`) is per-collection, because whole-document
+last-write-wins would lose data. Log a workout on your phone and another on
+your iPad before either syncs, and LWW discards one:
+
+| Collection | Strategy |
+|---|---|
+| `sessionHistory` | union by session `id` |
+| `readinessLog` | union by `date`, newer side wins a clash |
+| `profile`, `settings`, `equipment`, `meta`, `exerciseLibrary` | last-write-wins on `updated_at` |
+
+**First sign-in migrates automatically.** A collection that exists only
+locally has no remote row, so the merge keeps it and pushes it up — no
+separate one-shot migration path that could only ever be exercised once.
+
+`activeSession` is deliberately **not** synced: a half-finished workout belongs
+to the phone in your hand, and it is rewritten on every set.
 
 ## CI
 

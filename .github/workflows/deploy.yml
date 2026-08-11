@@ -27,6 +27,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Optional overrides. If unset, the build falls back to the defaults
+          # in src/lib/supabaseConfig.js. Use repository *variables*, not
+          # secrets — these values are published in the bundle either way, and
+          # only publishable keys belong here.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
