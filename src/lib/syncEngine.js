@@ -75,11 +75,22 @@ export async function pushCollection(userId, collection, value, updatedAt) {
  *
  * @param readLocal   (collection) => ({ value, updatedAt })
  * @param writeLocal  (collection, value) => void   // must NOT re-enqueue
+ * @param pull        override for tests; defaults to the real pullAll
+ * @param push        override for tests; defaults to the real pushCollection
  */
-export async function reconcile({ userId, readLocal, writeLocal, onProgress }) {
-  if (!hasCloud || !userId) return { pulled: 0, pushed: 0, errors: [] };
+export async function reconcile({
+  userId,
+  readLocal,
+  writeLocal,
+  onProgress,
+  // Injected so the orchestration can be tested without a network. Production
+  // callers never pass these.
+  pull = pullAll,
+  push = pushCollection,
+}) {
+  if ((!hasCloud && pull === pullAll) || !userId) return { pulled: 0, pushed: 0, errors: [] };
 
-  const remote = await pullAll(userId);
+  const remote = await pull(userId);
   const errors = [];
   let pulled = 0;
   let pushed = 0;
@@ -97,7 +108,7 @@ export async function reconcile({ userId, readLocal, writeLocal, onProgress }) {
 
     if (changed.remote) {
       // Stamp the merged result as "now" so other devices see it as newest.
-      const res = await pushCollection(userId, collection, value, Date.now());
+      const res = await push(userId, collection, value, Date.now());
       if (res.ok) pushed++;
       else errors.push(`${collection}: ${res.error}`);
     }

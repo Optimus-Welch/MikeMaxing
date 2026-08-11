@@ -179,6 +179,124 @@ console.log('\n=== offline queue ===');
   );
 }
 
+// --- 6b. reconcile(): the actual first-sign-in migration ------------------
+// Exercises the orchestration, not just the merge rules underneath it, using
+// a fake Supabase so it runs without a network.
+console.log('\n=== reconcile: first sign-in migration ===');
+{
+  const { reconcile, SYNCED_COLLECTIONS } = await import('../src/lib/syncEngine.js');
+
+  // A device with existing localStorage data and a completely empty cloud.
+  const local = {
+    profile: { value: { units: 'lb', goals: { liftsPerWeek: 2 } }, updatedAt: 1000 },
+    settings: { value: { bands: { green: 80 } }, updatedAt: 1000 },
+    sessionHistory: {
+      value: [
+        { id: 's2', type: 'Cardio', date: '2026-08-07' },
+        { id: 's1', type: 'Lift', date: '2026-08-03' },
+      ],
+      updatedAt: 1000,
+    },
+    readinessLog: { value: [{ date: '2026-08-07', score: 90 }], updatedAt: 1000 },
+  };
+
+  const cloud = {};            // empty project, as after running schema.sql
+  const written = {};          // what reconcile wrote back locally
+
+  const res = await reconcile({
+    userId: 'user-1',
+    readLocal: (c) => local[c] ?? { value: undefined, updatedAt: 0 },
+    writeLocal: (c, v) => {
+      written[c] = v;
+    },
+    pull: async () => ({}),
+    push: async (userId, collection, value) => {
+      cloud[collection] = { userId, value };
+      return { ok: true };
+    },
+  });
+
+  console.log(`  pushed ${res.pushed}, pulled ${res.pulled}, errors ${res.errors.length}`);
+  console.log('  uploaded collections:', Object.keys(cloud).sort().join(', '));
+
+  assert(res.errors.length === 0, `migration reported errors: ${res.errors.join('; ')}`);
+  assert(res.pulled === 0, 'nothing should be pulled from an empty cloud');
+  assert(Object.keys(written).length === 0, 'an empty cloud must not overwrite local data');
+
+  // Everything the user already had must have gone up, keyed to their user id.
+  for (const c of ['profile', 'settings', 'sessionHistory', 'readinessLog']) {
+    assert(cloud[c] != null, `${c} was not migrated to the cloud`);
+    assert(cloud[c].userId === 'user-1', `${c} was not keyed to the user id`);
+  }
+  assert(cloud.sessionHistory.value.length === 2, 'both logged sessions must be uploaded');
+  assert(
+    cloud.profile.value.goals.liftsPerWeek === 2,
+    'profile contents must survive the migration',
+  );
+
+  // Collections the device never had should not be invented.
+  const emptyOnes = SYNCED_COLLECTIONS.filter((c) => local[c] == null);
+  for (const c of emptyOnes) {
+    assert(cloud[c] == null, `${c} was empty locally but got uploaded anyway`);
+  }
+  console.log('  local-only data migrated; empty collections left alone');
+}
+
+// --- 6c. reconcile(): a second device pulls what the first uploaded -------
+console.log('\n=== reconcile: second device ===');
+{
+  const { reconcile } = await import('../src/lib/syncEngine.js');
+
+  const cloudRows = {
+    sessionHistory: {
+      value: [{ id: 's1', type: 'Lift', date: '2026-08-03' }],
+      updatedAt: 5000,
+    },
+    settings: { value: { bands: { green: 75 } }, updatedAt: 5000 },
+  };
+  const written = {};
+  const pushed = {};
+
+  const res = await reconcile({
+    userId: 'user-1',
+    // Fresh device: nothing stored locally.
+    readLocal: () => ({ value: undefined, updatedAt: 0 }),
+    writeLocal: (c, v) => {
+      written[c] = v;
+    },
+    pull: async () => cloudRows,
+    push: async (u, c, v) => {
+      pushed[c] = v;
+      return { ok: true };
+    },
+  });
+
+  console.log('  written locally:', Object.keys(written).sort().join(', '));
+  assert(res.pulled === 2, `expected 2 collections pulled, got ${res.pulled}`);
+  assert(written.sessionHistory?.length === 1, 'the cloud session history must land locally');
+  assert(written.settings?.bands.green === 75, 'cloud settings must land locally');
+  assert(Object.keys(pushed).length === 0, 'a fresh device has nothing to push back');
+  console.log('  fresh device receives cloud data and pushes nothing back');
+}
+
+// --- 6d. reconcile(): a failed upload is reported, not swallowed ----------
+console.log('\n=== reconcile: upload failure ===');
+{
+  const { reconcile } = await import('../src/lib/syncEngine.js');
+  const res = await reconcile({
+    userId: 'user-1',
+    readLocal: (c) =>
+      c === 'settings' ? { value: { bands: {} }, updatedAt: 1000 } : { value: undefined, updatedAt: 0 },
+    writeLocal: () => {},
+    pull: async () => ({}),
+    push: async () => ({ ok: false, error: 'new row violates row-level security policy' }),
+  });
+  console.log('  errors surfaced:', JSON.stringify(res.errors));
+  assert(res.errors.length === 1, 'a failed upload must be reported');
+  assert(/row-level security/.test(res.errors[0]), 'the underlying error must be preserved');
+  assert(res.pushed === 0, 'a failed upload must not be counted as pushed');
+}
+
 // --- 7. config guards -----------------------------------------------------
 console.log('\n=== config guards ===');
 {
