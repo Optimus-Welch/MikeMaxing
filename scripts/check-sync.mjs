@@ -297,6 +297,39 @@ console.log('\n=== reconcile: upload failure ===');
   assert(res.pushed === 0, 'a failed upload must not be counted as pushed');
 }
 
+// --- 6e. the sync modules must import without a native WebSocket ----------
+// supabase-js builds a realtime client inside createClient(), which needs a
+// native WebSocket. Node only has one from v22, so constructing the client at
+// module scope made every sync module unimportable under older Node — which is
+// exactly how this broke in CI. The client is lazy now; this pins that down.
+console.log('\n=== module import without native WebSocket ===');
+{
+  const { execFileSync } = await import('node:child_process');
+  const probe = [
+    'delete globalThis.WebSocket;',
+    "const m = await import('../src/lib/syncEngine.js');",
+    "await import('../src/lib/auth.js');",
+    "await import('../src/lib/syncStore.js');",
+    "if (typeof m.reconcile !== 'function') throw new Error('reconcile missing');",
+    "console.log('ok');",
+  ].join('\n');
+
+  let ok = true;
+  let detail = '';
+  try {
+    const out = execFileSync(process.execPath, ['--input-type=module', '-e', probe], {
+      encoding: 'utf8',
+      cwd: new URL('.', import.meta.url).pathname,
+    });
+    ok = out.includes('ok');
+  } catch (err) {
+    ok = false;
+    detail = String(err.stderr ?? err.message).split('\n').find((l) => /Error/.test(l)) ?? '';
+  }
+  assert(ok, `sync modules must import with no native WebSocket. ${detail}`);
+  if (ok) console.log('  syncEngine, auth and syncStore import cleanly (client stays lazy)');
+}
+
 // --- 7. config guards -----------------------------------------------------
 console.log('\n=== config guards ===');
 {

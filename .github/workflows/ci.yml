@@ -30,7 +30,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: @supabase/supabase-js needs a native WebSocket, which
+          # Node only gained in v22, and it now warns that <=20 is deprecated.
+          node-version: 22
           cache: npm
 
       # `npm ci` rather than `npm install`: installs exactly the lockfile and

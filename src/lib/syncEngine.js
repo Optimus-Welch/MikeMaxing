@@ -7,7 +7,7 @@
 // was to keep that interface. Sync therefore runs alongside: pull on sign-in
 // and on reconnect, push on write.
 
-import { supabase, hasCloud } from './supabaseClient.js';
+import { getSupabase, hasCloud } from './supabaseClient.js';
 import { mergeCollection } from './mergeCollections.js';
 
 export const SYNCED_COLLECTIONS = [
@@ -30,7 +30,7 @@ const TABLE = 'collections';
 export async function pullAll(userId) {
   if (!hasCloud) return {};
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from(TABLE)
     .select('collection, data, updated_at')
     .eq('user_id', userId);
@@ -51,7 +51,7 @@ export async function pullAll(userId) {
 export async function pushCollection(userId, collection, value, updatedAt) {
   if (!hasCloud) return { ok: false, error: 'not configured' };
 
-  const { error } = await supabase.from(TABLE).upsert(
+  const { error } = await getSupabase().from(TABLE).upsert(
     {
       user_id: userId,
       collection,
