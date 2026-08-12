@@ -93,14 +93,34 @@ your iPad before either syncs, and LWW discards one:
 |---|---|
 | `sessionHistory` | union by session `id` |
 | `readinessLog` | union by `date`, newer side wins a clash |
-| `profile`, `settings`, `equipment`, `meta`, `exerciseLibrary` | last-write-wins on `updated_at` |
+| `profile`, `settings`, `equipment` | last-write-wins on `updated_at` |
 
 **First sign-in migrates automatically.** A collection that exists only
 locally has no remote row, so the merge keeps it and pushes it up — no
 separate one-shot migration path that could only ever be exercised once.
 
-`activeSession` is deliberately **not** synced: a half-finished workout belongs
-to the phone in your hand, and it is rewritten on every set.
+**Seed defaults are stamped `updatedAt: 0`** (`writeSeed`). `ensureSeeded()`
+runs at import, so a laptop you are about to sign in on writes a full set of
+factory defaults seconds beforehand. Stamped with the wall clock those defaults
+would be the newest version of every last-write-wins collection anywhere, and
+the merge would push them over the settings you had tuned on your phone. A zero
+says what is true: this is a placeholder, anything real beats it.
+
+**Pulled values notify the UI.** `writeCollectionFromRemote` fires a
+per-collection subscription that pages read through `useCollection`. Writing
+pulled data to localStorage without telling anyone is how a signed-in device
+ends up holding your whole history on disk while the screen still says *No
+sessions logged yet* — every page read was a `useState(getX)` snapshot taken at
+mount, correct once and then deaf.
+
+Three collections are **not** synced, all because they describe a device rather
+than a person:
+
+- `activeSession` — a half-finished workout belongs to the phone in your hand,
+  and it is rewritten on every set
+- `meta` — which shipped-data migrations *this browser* has run
+- `exerciseLibrary` — reference data that ships inside the bundle; the cloud
+  can only ever offer an older copy than the running build
 
 ## CI
 

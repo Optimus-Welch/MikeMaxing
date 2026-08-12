@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getProfile,
   getSessionHistory,
   getSettings,
   getExerciseLibrary,
-  getReadinessEntryForDate,
+  getReadinessLog,
   getActiveSession,
   setActiveSession,
   clearActiveSession,
@@ -18,6 +18,7 @@ import {
   recommendSession,
   durationTargetFor,
 } from '../lib/readiness.js';
+import { useCollection } from '../lib/useCollection.js';
 import { weeklyCounts, todayISO } from '../lib/weekly.js';
 import { generateLiftSession, swapExerciseTo } from '../lib/liftGenerator.js';
 import { buildBlocks, createRunState } from '../lib/blocks.js';
@@ -33,18 +34,45 @@ const LOCATIONS = ['Work', 'Home'];
 export default function Today() {
   const navigate = useNavigate();
 
-  const [profile] = useState(getProfile);
-  const [settings] = useState(getSettings);
-  const [library] = useState(getExerciseLibrary);
-  const [sessionHistory, setSessionHistory] = useState(getSessionHistory);
+  // Live reads: these follow the stored collections rather than snapshotting
+  // them at mount, so a sync landing a moment after sign-in shows up here
+  // instead of waiting for a reload. Still synchronous on first render.
+  const profile = useCollection('profile', getProfile);
+  const settings = useCollection('settings', getSettings);
+  const library = useCollection('exerciseLibrary', getExerciseLibrary);
+  const sessionHistory = useCollection('sessionHistory', getSessionHistory);
+  const readinessLog = useCollection('readinessLog', getReadinessLog);
+
+  // A workout in progress is device-local by design, so a snapshot is right.
   const [activeSession] = useState(getActiveSession);
+
+  const today = useMemo(() => new Date(), []);
+  const todayDate = todayISO(today);
 
   // Restore whatever readiness was already entered today, so reopening the app
   // does not collapse the screen back to "no suggestion".
-  const [todayEntry] = useState(() => getReadinessEntryForDate(todayISO(new Date())));
-  const [readinessInput, setReadinessInput] = useState(
+  const todayEntry = useMemo(
+    () => readinessLog.find((e) => e.date === todayDate) ?? null,
+    [readinessLog, todayDate],
+  );
+  const [readinessInput, setReadinessInput] = useState(() =>
     todayEntry?.score != null ? String(todayEntry.score) : '',
   );
+
+  // Adopt a score that arrived after mount — you read it off your watch and
+  // entered it on your phone, and this browser has only just pulled it down.
+  //
+  // Keyed on the stored score CHANGING, not on the box being empty: typing here
+  // saves as you type, so "empty box, stored score" is also what you get the
+  // instant you clear the field, and re-filling it then would make the score
+  // impossible to delete.
+  const lastSeenScore = useRef(todayEntry?.score ?? null);
+  useEffect(() => {
+    const score = todayEntry?.score ?? null;
+    if (score === lastSeenScore.current) return;
+    lastSeenScore.current = score;
+    if (score != null) setReadinessInput(String(score));
+  }, [todayEntry]);
 
   const [manualLocation, setManualLocation] = useState(null);
   const [loggedType, setLoggedType] = useState(null);
@@ -59,8 +87,6 @@ export default function Today() {
   const [swaps, setSwaps] = useState({});
   const [swapTarget, setSwapTarget] = useState(null);
 
-  const today = useMemo(() => new Date(), []);
-
   // Garmin's number, taken as given — no weighting, no combining.
   const readinessScore = useMemo(() => parseReadinessScore(readinessInput), [readinessInput]);
 
@@ -70,12 +96,12 @@ export default function Today() {
   useEffect(() => {
     if (readinessScore == null) return;
     upsertReadinessEntry({
-      date: todayISO(today),
+      date: todayDate,
       source: 'garmin',
       score: readinessScore,
       band,
     });
-  }, [readinessScore, band, today]);
+  }, [readinessScore, band, todayDate]);
 
   const counts = useMemo(() => weeklyCounts(sessionHistory, today), [sessionHistory, today]);
 
@@ -148,7 +174,7 @@ export default function Today() {
       session: plannedSession,
       location: selectedLocation,
       band,
-      date: todayISO(today),
+      date: todayDate,
     });
     setActiveSession(runState);
     navigate('/run');
@@ -161,13 +187,15 @@ export default function Today() {
       id: crypto.randomUUID(),
       type: selectedType,
       location: selectedLocation,
-      date: todayISO(today),
+      date: todayDate,
       band,
       // Cardio has no generated plan yet, but the duration target is what the
       // readiness score bought today, so it is worth recording.
       ...(selectedType === 'Cardio' ? { targetMinutes: duration.cardioMinutes } : {}),
     };
-    setSessionHistory(addSession(session));
+    // No setState needed: addSession writes the collection, and the live read
+    // above picks the new history straight back up.
+    addSession(session);
     setJustLogged(true);
     setTimeout(() => setJustLogged(false), 2000);
   }

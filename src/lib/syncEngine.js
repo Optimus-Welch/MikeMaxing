@@ -13,16 +13,25 @@ import { mergeCollection } from './mergeCollections.js';
 export const SYNCED_COLLECTIONS = [
   'profile',
   'equipment',
-  'exerciseLibrary',
   'sessionHistory',
   'readinessLog',
   'settings',
-  'meta',
 ];
 
-// `activeSession` is deliberately absent: a half-finished workout is tied to
-// the phone in your hand, and syncing it would let a stale device resurrect or
-// clobber a session you are in the middle of.
+// Three collections are deliberately absent, all for the same reason: they
+// describe a DEVICE, not a person, and syncing them lets one device make
+// decisions on another's behalf.
+//
+//   activeSession   a half-finished workout, tied to the phone in your hand.
+//                   Syncing it would let a stale device resurrect or clobber a
+//                   session you are in the middle of.
+//   meta            which shipped-data migrations this browser has run.
+//   exerciseLibrary reference data that ships inside the bundle, which every
+//                   device already has and db.js re-seeds when the build is
+//                   newer. The cloud can only offer an older copy.
+//
+// storage.js holds the same list as LOCAL_ONLY, which is what actually keeps
+// them out of the upload queue.
 
 const TABLE = 'collections';
 

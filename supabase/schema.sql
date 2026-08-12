@@ -25,6 +25,12 @@ create table if not exists public.collections (
 
 -- Restrict which collections can be written at all, so a bug (or a poked
 -- console) cannot fill the table with arbitrary keys.
+--
+-- `exerciseLibrary` and `meta` are still permitted but are no longer synced by
+-- the app — they describe a device rather than a person (see SYNCED_COLLECTIONS
+-- in src/lib/syncEngine.js). The list stays a superset deliberately: tightening
+-- it would mean re-running this file against a live project purely to forbid
+-- something nothing writes any more, and any rows left behind are inert.
 do $$
 begin
   if not exists (

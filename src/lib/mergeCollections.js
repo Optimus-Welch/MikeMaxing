@@ -18,12 +18,10 @@ export const MERGE_STRATEGY = {
   profile: 'lastWriteWins',
   settings: 'lastWriteWins',
   equipment: 'lastWriteWins',
-  meta: 'lastWriteWins',
-  // Reference data shipped with the app. It syncs so a fresh device is usable
-  // immediately, but db.js re-seeds it whenever the running build's
-  // EXERCISE_LIBRARY_VERSION is newer, so code always beats the cloud copy.
-  exerciseLibrary: 'lastWriteWins',
 };
+
+// `meta` and `exerciseLibrary` used to be here. They are device-local now —
+// see the note beside SYNCED_COLLECTIONS in syncEngine.js.
 
 const asArray = (v) => (Array.isArray(v) ? v : []);
 

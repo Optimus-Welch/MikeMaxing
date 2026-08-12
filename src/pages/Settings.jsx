@@ -1,14 +1,34 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { getProfile, getSettings, updateProfile, updateSettings } from '../lib/db.js';
+import { useCollection } from '../lib/useCollection.js';
 import { MAX_LIFT_EXERCISES } from '../lib/liftGenerator.js';
 import SyncPanel from '../components/SyncPanel.jsx';
 
 const BAND_ORDER = ['Green', 'Yellow', 'Orange', 'Red'];
 
 export default function Settings() {
-  const [profile, setProfile] = useState(getProfile);
-  const [settings, setSettings] = useState(getSettings);
+  // This is the screen you sign in on, so it is the screen most likely to have
+  // your real settings arrive underneath it. Track the stored values live and
+  // keep the form as a separate draft on top.
+  const storedProfile = useCollection('profile', getProfile);
+  const storedSettings = useCollection('settings', getSettings);
+
+  const [profile, setProfile] = useState(storedProfile);
+  const [settings, setSettings] = useState(storedSettings);
   const [saved, setSaved] = useState(false);
+
+  // Adopt stored values that changed for a reason other than our own save.
+  // Comparing the serialised pair rather than object identity matters: every
+  // notification hands back freshly parsed objects, so identity always differs
+  // and the form would reset on each one.
+  const storedKey = JSON.stringify([storedProfile, storedSettings]);
+  const adopted = useRef(storedKey);
+  useEffect(() => {
+    if (adopted.current === storedKey) return;
+    adopted.current = storedKey;
+    setProfile(storedProfile);
+    setSettings(storedSettings);
+  }, [storedKey, storedProfile, storedSettings]);
 
   function setDuration(band, key, value) {
     setSettings((s) => ({
