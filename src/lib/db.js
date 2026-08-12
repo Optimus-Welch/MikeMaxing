@@ -2,7 +2,7 @@
 // call these instead of storage.js directly, so the storage format and the
 // seeding logic stay in one place.
 
-import { readCollection, writeCollection } from './storage.js';
+import { readCollection, writeCollection, writeSeed } from './storage.js';
 import {
   seedProfile,
   seedEquipment,
@@ -30,10 +30,31 @@ const DEFAULTS = {
 
 // Write the seed value for any collection that has never been touched, so
 // every collection always exists once the app has loaded once.
+//
+// Seeds go in via writeSeed, which stamps them as older than anything real —
+// see the comment there. This runs on import, so on a device you are about to
+// sign in on it runs seconds before the first sync; stamped "now", these
+// factory defaults would outrank and overwrite the settings on your phone.
 function ensureSeeded() {
+  // A never-opened install has no settings. Anything else is an existing
+  // install, which may still owe the version migrations below — so only a
+  // genuinely fresh one may claim it is already migrated.
+  const freshInstall = readCollection('settings', undefined) === undefined;
+
   for (const [collection, seedValue] of Object.entries(DEFAULTS)) {
-    const missing = readCollection(collection, undefined) === undefined;
-    if (missing) writeCollection(collection, seedValue);
+    if (readCollection(collection, undefined) !== undefined) continue;
+
+    // A fresh install is born on the current shapes, so record that rather
+    // than pretending it is at version 0 and running migrations over data
+    // that was written by this very build. Those migrations rewrite settings,
+    // which on a fresh device means re-stamping factory defaults as brand new
+    // — exactly what writeSeed exists to avoid.
+    const value =
+      collection === 'meta' && freshInstall
+        ? { exerciseLibraryVersion: EXERCISE_LIBRARY_VERSION, settingsVersion: SETTINGS_VERSION }
+        : seedValue;
+
+    writeSeed(collection, value);
   }
 }
 

@@ -100,22 +100,23 @@ console.log('\n=== first sign-in migration ===');
 // --- 5. every synced collection has a deliberate strategy ----------------
 console.log('\n=== strategy coverage ===');
 {
-  const synced = [
-    'profile',
-    'equipment',
-    'exerciseLibrary',
-    'sessionHistory',
-    'readinessLog',
-    'settings',
-    'meta',
-  ];
-  for (const c of synced) {
+  const { SYNCED_COLLECTIONS } = await import('../src/lib/syncEngine.js');
+
+  for (const c of SYNCED_COLLECTIONS) {
     assert(MERGE_STRATEGY[c] != null, `${c} has no declared merge strategy`);
   }
   // The two append-only logs must never be whole-document LWW.
   assert(MERGE_STRATEGY.sessionHistory === 'unionById', 'sessionHistory must merge by id');
   assert(MERGE_STRATEGY.readinessLog === 'unionByDate', 'readinessLog must merge by date');
-  console.log('  ', synced.map((c) => `${c}=${MERGE_STRATEGY[c]}`).join(', '));
+  console.log('  ', SYNCED_COLLECTIONS.map((c) => `${c}=${MERGE_STRATEGY[c]}`).join(', '));
+
+  // Device-local collections must not be synced, and must not carry a strategy
+  // either — a stray strategy is how one quietly gets synced again later.
+  for (const c of ['meta', 'exerciseLibrary', 'activeSession']) {
+    assert(!SYNCED_COLLECTIONS.includes(c), `${c} describes a device and must not sync`);
+    assert(MERGE_STRATEGY[c] == null, `${c} is device-local but still declares a merge strategy`);
+  }
+  console.log('   device-local: meta, exerciseLibrary, activeSession');
 }
 
 // --- 6. offline queue + no push/pull ping-pong ---------------------------
@@ -177,6 +178,89 @@ console.log('\n=== offline queue ===');
     storage.readCollection('nope', 'fallback') === 'fallback',
     'a missing collection must still return the fallback',
   );
+}
+
+// --- 6a. a pulled value must reach the UI, not just the disk --------------
+// The bug this pins down: signing in on a second device pulled the history
+// down and wrote it to localStorage, but nothing told the rendered page, so
+// the screen kept showing the empty snapshot it took at mount. Every page read
+// went through useState(getSessionHistory) — correct once, then frozen.
+console.log('\n=== a pulled value notifies the UI ===');
+{
+  const storage = await import('../src/lib/storage.js');
+  const seen = [];
+  const stop = storage.subscribeCollection('sessionHistory', (c) => seen.push(c));
+
+  // The pull path. This is the one that was silent.
+  storage.writeCollectionFromRemote('sessionHistory', [{ id: 'cloud-1' }]);
+  assert(seen.length === 1, 'applying a pulled value must notify subscribers');
+
+  // Local writes notify too, so one subscription covers both sources.
+  storage.writeCollection('sessionHistory', [{ id: 'local-1' }]);
+  assert(seen.length === 2, 'a local write must notify subscribers');
+
+  // Subscriptions are per collection: an unrelated write must not wake a page
+  // that does not care. activeSession is rewritten on every single set.
+  storage.writeCollection('activeSession', { index: 1 });
+  assert(seen.length === 2, 'an unrelated collection must not notify');
+
+  // A throwing subscriber must not take the write down with it.
+  const stopBad = storage.subscribeCollection('sessionHistory', () => {
+    throw new Error('bad subscriber');
+  });
+  let survived = true;
+  try {
+    storage.writeCollection('sessionHistory', [{ id: 'local-2' }]);
+  } catch {
+    survived = false;
+  }
+  assert(survived, 'a throwing subscriber must not break the write');
+  assert(
+    storage.readCollection('sessionHistory', [])[0].id === 'local-2',
+    'the write must still have landed',
+  );
+  stopBad();
+
+  stop();
+  storage.writeCollectionFromRemote('sessionHistory', [{ id: 'cloud-2' }]);
+  assert(seen.length === 3, 'unsubscribe must actually unsubscribe');
+  console.log('  pulls and local writes both notify; unrelated writes do not');
+}
+
+// --- 6f. seed defaults must never outrank real cloud data ----------------
+// db.js seeds every missing collection at import — which on a device you are
+// about to sign in on happens seconds before the first sync. Stamped with the
+// wall clock, those factory defaults are the newest version of every
+// last-write-wins collection anywhere, and reconciliation would push them over
+// the settings you had tuned on your phone.
+console.log('\n=== seeded defaults lose to real data ===');
+{
+  const storage = await import('../src/lib/storage.js');
+
+  storage.writeSeed('settings', { bands: { green: 80 }, freshnessWindow: 3 });
+  assert(storage.localUpdatedAt('settings') === 0, 'a seed must be stamped as older than anything');
+  assert(
+    storage.pendingCollections().includes('settings'),
+    'a seed must still upload, so a local-only device seeds an empty cloud',
+  );
+
+  const seeded = storage.readForSync('settings');
+  const fromPhone = { value: { bands: { green: 70 }, freshnessWindow: 5 }, updatedAt: 1000 };
+  const { value, changed } = mergeCollection('settings', seeded, fromPhone);
+
+  assert(value.bands.green === 70, 'the phone’s tuned settings must win over fresh defaults');
+  assert(changed.local === true, 'the fresh device must adopt them');
+  assert(changed.remote === false, 'and must not push its defaults back over them');
+
+  // A real local edit still wins, which is the whole point of LWW.
+  storage.writeCollection('settings', { bands: { green: 90 } });
+  const edited = storage.readForSync('settings');
+  assert(edited.updatedAt > 0, 'a real edit must be stamped with a real time');
+  assert(
+    mergeCollection('settings', edited, fromPhone).value.bands.green === 90,
+    'a genuine local edit must still beat an older cloud copy',
+  );
+  console.log('  factory defaults yield to the cloud; real edits still win');
 }
 
 // --- 6b. reconcile(): the actual first-sign-in migration ------------------
@@ -279,6 +363,73 @@ console.log('\n=== reconcile: second device ===');
   console.log('  fresh device receives cloud data and pushes nothing back');
 }
 
+// --- 6c-ii. reconcile(): a SEEDED second device --------------------------
+// The real-world case, and the one that was broken. A second device is never
+// actually empty: opening the app once runs ensureSeeded(), so by the time you
+// sign in it holds an empty history, default goals and factory settings. The
+// history must come down, and the defaults must not go up.
+console.log('\n=== reconcile: seeded second device ===');
+{
+  const { reconcile } = await import('../src/lib/syncEngine.js');
+  const { seedProfile, seedSettings } = await import('../src/lib/seed.js');
+
+  // What ensureSeeded() leaves behind: real values, stamped as placeholders.
+  const local = {
+    profile: { value: seedProfile, updatedAt: 0 },
+    settings: { value: seedSettings, updatedAt: 0 },
+    sessionHistory: { value: [], updatedAt: 0 },
+    readinessLog: { value: [], updatedAt: 0 },
+  };
+
+  const phoneHistory = [
+    { id: 'p2', type: 'Cardio', date: '2026-08-07' },
+    { id: 'p1', type: 'Lift', date: '2026-08-03' },
+  ];
+  const cloudRows = {
+    sessionHistory: { value: phoneHistory, updatedAt: 5000 },
+    readinessLog: { value: [{ date: '2026-08-07', score: 62 }], updatedAt: 5000 },
+    profile: { value: { units: 'lb', goals: { liftsPerWeek: 4, cardioPerWeek: 3 } }, updatedAt: 5000 },
+    settings: { value: { ...seedSettings, freshnessWindow: 6 }, updatedAt: 5000 },
+  };
+
+  const written = {};
+  const pushed = {};
+  const res = await reconcile({
+    userId: 'user-1',
+    readLocal: (c) => local[c] ?? { value: undefined, updatedAt: 0 },
+    writeLocal: (c, v) => {
+      written[c] = v;
+    },
+    pull: async () => cloudRows,
+    push: async (u, c, v) => {
+      pushed[c] = v;
+      return { ok: true };
+    },
+  });
+
+  console.log('  written locally:', Object.keys(written).sort().join(', ') || '(none)');
+  console.log('  pushed back:', Object.keys(pushed).sort().join(', ') || '(none)');
+
+  assert(res.errors.length === 0, `reconcile reported errors: ${res.errors.join('; ')}`);
+
+  // The symptom: "No sessions logged yet" and 0/2 on a device that has them.
+  assert(written.sessionHistory?.length === 2, 'the phone’s sessions must land on this device');
+  assert(
+    written.sessionHistory.map((s) => s.id).join(',') === 'p2,p1',
+    'and in newest-first order',
+  );
+  assert(written.readinessLog?.length === 1, 'the readiness log must come down too');
+
+  // The quieter half: fresh defaults must not overwrite the account.
+  assert(written.profile?.goals.liftsPerWeek === 4, 'the account’s goals must win over defaults');
+  assert(written.settings?.freshnessWindow === 6, 'the account’s settings must win over defaults');
+  assert(pushed.profile == null, 'default goals must not be pushed over the account’s');
+  assert(pushed.settings == null, 'default settings must not be pushed over the account’s');
+  assert(pushed.sessionHistory == null, 'an empty history must not be pushed back');
+
+  console.log('  cloud data hydrates the device; its factory defaults stay put');
+}
+
 // --- 6d. reconcile(): a failed upload is reported, not swallowed ----------
 console.log('\n=== reconcile: upload failure ===');
 {
@@ -295,6 +446,55 @@ console.log('\n=== reconcile: upload failure ===');
   assert(res.errors.length === 1, 'a failed upload must be reported');
   assert(/row-level security/.test(res.errors[0]), 'the underlying error must be preserved');
   assert(res.pushed === 0, 'a failed upload must not be counted as pushed');
+}
+
+// --- 6g. db.js really seeds through writeSeed ----------------------------
+// 6f proves writeSeed stamps a placeholder and 6c-ii proves a placeholder
+// loses to the cloud. This is the link between them: that the seeding which
+// actually runs on a fresh device goes through writeSeed and not the ordinary
+// write. Run in a child process so it gets a genuinely empty store — this file
+// has been writing to the shared one since test 6.
+console.log('\n=== ensureSeeded stamps placeholders, not fresh writes ===');
+{
+  const { execFileSync } = await import('node:child_process');
+  const probe = [
+    'const store = new Map();',
+    'globalThis.localStorage = {',
+    '  getItem: (k) => (store.has(k) ? store.get(k) : null),',
+    '  setItem: (k, v) => store.set(k, String(v)),',
+    '  removeItem: (k) => store.delete(k),',
+    '};',
+    // Importing db.js is what runs ensureSeeded() and the migrations.
+    "await import('../src/lib/db.js');",
+    "const s = await import('../src/lib/storage.js');",
+    "const { SETTINGS_VERSION } = await import('../src/lib/seed.js');",
+    "for (const c of ['profile', 'settings', 'equipment', 'sessionHistory', 'readinessLog']) {",
+    '  const t = s.localUpdatedAt(c);',
+    '  if (t !== 0) throw new Error(`${c} was seeded with a real timestamp (${t})`);',
+    '}',
+    // The migrations must not fire on a fresh install and re-stamp settings.
+    "const meta = s.readCollection('meta', null);",
+    '  if (meta.settingsVersion !== SETTINGS_VERSION)',
+    '    throw new Error(`fresh install left settingsVersion at ${meta.settingsVersion}`);',
+    "console.log('ok');",
+  ].join('\n');
+
+  let ok = true;
+  let detail = '';
+  try {
+    ok = execFileSync(process.execPath, ['--input-type=module', '-e', probe], {
+      encoding: 'utf8',
+      cwd: new URL('.', import.meta.url).pathname,
+    }).includes('ok');
+  } catch (err) {
+    ok = false;
+    detail =
+      String(err.stderr ?? err.message)
+        .split('\n')
+        .find((l) => /Error/.test(l)) ?? '';
+  }
+  assert(ok, `ensureSeeded must write placeholders. ${detail}`);
+  if (ok) console.log('  a fresh install seeds at updatedAt 0 and runs no migrations');
 }
 
 // --- 6e. the sync modules must import without a native WebSocket ----------
@@ -328,6 +528,52 @@ console.log('\n=== module import without native WebSocket ===');
   }
   assert(ok, `sync modules must import with no native WebSocket. ${detail}`);
   if (ok) console.log('  syncEngine, auth and syncStore import cleanly (client stays lazy)');
+}
+
+// --- 6h. pages must read synced collections live -------------------------
+// The storage layer notifies now, but that only helps if the screens listen.
+// `useState(getSessionHistory)` reads correctly exactly once and then goes
+// deaf, which is what left a signed-in device rendering "No sessions logged
+// yet" over a full local copy of the history. There is no DOM in this project
+// to mount React into, so this is a static guard instead — cheap, and it fails
+// on the shape of the mistake rather than waiting to be noticed on a phone.
+console.log('\n=== pages read synced collections live ===');
+{
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const pagesDir = new URL('../src/pages/', import.meta.url);
+
+  // Getters that read a collection the cloud can change underneath us.
+  const liveGetters = {
+    getProfile: 'profile',
+    getSettings: 'settings',
+    getSessionHistory: 'sessionHistory',
+    getReadinessLog: 'readinessLog',
+    getEquipment: 'equipment',
+  };
+
+  let offenders = 0;
+  for (const file of readdirSync(pagesDir).filter((f) => f.endsWith('.jsx'))) {
+    const src = readFileSync(new URL(file, pagesDir), 'utf8');
+    for (const getter of Object.keys(liveGetters)) {
+      // The frozen-snapshot shape: useState(getX) / useState(() => getX(...)).
+      const snapshot = new RegExp(String.raw`useState\(\s*(\(\s*\)\s*=>\s*)?${getter}\b`);
+      if (snapshot.test(src)) {
+        console.error(`  ${file}: useState(${getter}) — snapshots, never updates`);
+        offenders++;
+      }
+    }
+  }
+  assert(offenders === 0, 'a page snapshots a synced collection instead of subscribing to it');
+
+  // And confirm the page the symptom was reported on genuinely subscribes.
+  const today = readFileSync(new URL('Today.jsx', pagesDir), 'utf8');
+  for (const collection of ['sessionHistory', 'profile', 'settings']) {
+    assert(
+      new RegExp(String.raw`useCollection\(\s*'${collection}'`).test(today),
+      `Today must read ${collection} through useCollection`,
+    );
+  }
+  console.log('  no page holds a frozen snapshot of a synced collection');
 }
 
 // --- 7. config guards -----------------------------------------------------

@@ -86,8 +86,9 @@ export async function flush() {
         : { status: 'synced', lastSyncedAt: Date.now(), error: null },
     );
   } catch (err) {
-    // Offline or a transient failure: keep the queue and try again later.
-    emit({ status: 'offline', error: err?.message ?? 'Upload failed' });
+    // Either way the queue is kept and retried; the difference is only what we
+    // tell you about why nothing is moving.
+    emit(offlineOrError(err, 'Upload failed'));
   } finally {
     flushing = false;
     if (flushAgain) {
@@ -132,8 +133,22 @@ export async function syncNow() {
     });
     return result;
   } catch (err) {
-    emit({ status: 'offline', error: err?.message ?? 'Sync failed' });
+    // A pull can fail for two very different reasons, and calling both
+    // "offline" hides the one you can act on. A dropped connection is offline;
+    // anything else — a row-level-security policy, a missing table, an expired
+    // session — is a real error and its message is the useful part.
+    emit(offlineOrError(err, 'Sync failed'));
   }
+}
+
+function offlineOrError(err, fallback) {
+  const message = err?.message ?? fallback;
+  const looksOffline =
+    (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+    /failed to fetch|networkerror|network request failed/i.test(message);
+  return looksOffline
+    ? { status: 'offline', error: null }
+    : { status: 'error', error: message };
 }
 
 // -- wiring ----------------------------------------------------------------

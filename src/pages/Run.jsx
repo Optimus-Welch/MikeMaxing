@@ -9,6 +9,7 @@ import {
   getSettings,
   addSession,
 } from '../lib/db.js';
+import { useCollection } from '../lib/useCollection.js';
 import { swapExerciseTo } from '../lib/liftGenerator.js';
 import { LOCATION_LOAD_CAPS } from '../lib/exercises.js';
 import { demoFor } from '../lib/demos.js';
@@ -39,8 +40,13 @@ function fmtClock(seconds) {
 export default function Run() {
   const navigate = useNavigate();
   const [state, setState] = useState(getActiveSession);
+  // Snapshots on purpose: the session you are performing must not be reshaped
+  // underneath you by a sync landing mid-set. `exerciseLibrary` is device-local
+  // anyway, and `activeSession` never leaves this device.
   const [library] = useState(getExerciseLibrary);
-  const [settings] = useState(getSettings);
+  // Settings are read live — the only one consulted here is the chime, and a
+  // preference has no business being frozen for the length of a workout.
+  const settings = useCollection('settings', getSettings);
   // Drives the rest countdown re-render once a second.
   const [, setTick] = useState(0);
   // Overlays. Both are rendered above the run screen rather than routed to, so
