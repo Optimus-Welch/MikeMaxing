@@ -63,6 +63,10 @@ export default function SyncPanel() {
       )}
       {sync.error && <p className="hint warn">{sync.error}</p>}
 
+      <p className="hint build-stamp">
+        Build {__BUILD_SHA__} · {new Date(__BUILD_TIME__).toLocaleString()}
+      </p>
+
       {sync.user ? (
         <>
           <p className="hint">Signed in as {sync.user.email}</p>

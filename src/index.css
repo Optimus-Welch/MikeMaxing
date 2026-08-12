@@ -1213,3 +1213,11 @@ button:focus-visible {
 .sync-badge.is-syncing .sync-dot {
   background: var(--accent);
 }
+
+.build-stamp {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 12px;
+}
