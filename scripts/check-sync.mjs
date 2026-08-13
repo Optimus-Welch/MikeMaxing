@@ -685,6 +685,99 @@ console.log('\n=== pages read synced collections live ===');
   console.log('  no page holds a frozen snapshot of a synced collection');
 }
 
+// --- 6i. every sync status says the right thing --------------------------
+// The reported bug: a phone with no session showed "2 UNSYNCED", which reads
+// as two uploads stuck in a queue. Nothing was queued in any meaningful sense
+// — syncNow() returns immediately without a user, so the device was not behind,
+// it was not syncing at all. The badge handled five statuses explicitly and let
+// the sixth fall through to a trailing `pending ? \`${pending} unsynced\``
+// branch, and the sixth was `signed-out`.
+console.log('\n=== every sync status is described, and described correctly ===');
+{
+  const { SYNC_STATUSES } = await import('../src/lib/syncStore.js');
+  const { describeSync } = await import('../src/lib/syncMessages.js');
+
+  // Exhaustiveness. This is the guard: a new status must be given words, not
+  // inherit whichever branch happens to sit last.
+  for (const status of SYNC_STATUSES) {
+    let threw = false;
+    try {
+      describeSync(status, 0);
+      describeSync(status, 3);
+    } catch {
+      threw = true;
+    }
+    assert(!threw, `status "${status}" has no description`);
+  }
+  let unknownThrew = false;
+  try {
+    describeSync('something-new', 0);
+  } catch {
+    unknownThrew = true;
+  }
+  assert(unknownThrew, 'an unmapped status must throw, not fall through to a neighbour');
+  console.log('  all', SYNC_STATUSES.length, 'statuses mapped; an unknown one throws');
+
+  // Signed out must read as signed out, whether or not anything is queued —
+  // never as a stuck upload.
+  for (const pending of [0, 2]) {
+    const out = describeSync('signed-out', pending);
+    const text = `${out.short} ${out.detail}`;
+    assert(/not signed in/i.test(out.short), 'signed-out must say it is signed out');
+    assert(
+      !/unsynced|uploading|waiting to upload/i.test(text),
+      `signed-out must not read as a stuck queue (pending=${pending}): ${text}`,
+    );
+    assert(out.action === 'settings', 'signed-out must offer the fix, not just report');
+  }
+  console.log('  signed-out reads as signed-out, with or without queued changes');
+
+  // The states that ARE a working queue must not be confused with it either.
+  assert(describeSync('offline', 2).tone === 'warn', 'offline is a warning, not a failure');
+  assert(
+    /reconnect/i.test(describeSync('offline', 2).detail),
+    'offline must say the queue drains on reconnect — that IS the waiting case',
+  );
+  assert(describeSync('error', 0).tone === 'bad', 'a failure must look like a failure');
+  assert(describeSync('syncing', 0).tone === 'busy', 'syncing is in-progress, not a problem');
+
+  // The two quiet states stay quiet.
+  assert(describeSync('synced', 0) === null, 'synced must render nothing');
+  assert(describeSync('local-only', 0) === null, 'local-only must render nothing');
+  console.log('  synced and local-only stay silent; offline, error and syncing are distinct');
+
+  // And the badge must actually go through this mapping rather than
+  // re-deriving labels from status with its own conditional chain.
+  const { readFileSync } = await import('node:fs');
+  const badge = readFileSync(new URL('../src/components/SyncBadge.jsx', import.meta.url), 'utf8');
+  assert(/describeSync\(/.test(badge), 'SyncBadge must use the shared description');
+
+  // Comments stripped: the word belongs in the explanation of why it is gone,
+  // just not in anything rendered.
+  const badgeCode = badge.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert(
+    !/unsynced/i.test(badgeCode),
+    'SyncBadge must not label anything "unsynced" — that was the misleading word',
+  );
+  console.log('  the badge renders from the shared mapping');
+
+  // A failed upload must name its reason. The store used to replace res.error
+  // with a fixed sentence, so a policy rejection, a schema mismatch and an
+  // expired session all presented identically and none of them said which.
+  const store = readFileSync(new URL('../src/lib/syncStore.js', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  assert(
+    !/Some changes could not be uploaded/.test(store),
+    'flush must report the real upload error, not a fixed summary',
+  );
+  assert(
+    /res\.error/.test(store),
+    'flush must carry the failure reason from pushCollection into the status',
+  );
+  console.log('  a failed upload reports its actual reason');
+}
+
 // --- 7. config guards -----------------------------------------------------
 console.log('\n=== config guards ===');
 {
