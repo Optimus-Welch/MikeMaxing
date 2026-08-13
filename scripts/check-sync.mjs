@@ -430,6 +430,115 @@ console.log('\n=== reconcile: seeded second device ===');
   console.log('  cloud data hydrates the device; its factory defaults stay put');
 }
 
+// --- 6c-iii. an unauthenticated read must fail, not look empty ------------
+// The mechanism this guards, quoted from the installed supabase-js:
+//
+//     async _getAccessToken() {
+//       return (await this._getSessionToken()) ?? this.supabaseKey
+//     }
+//
+// With no session it sends the PUBLISHABLE key, so the request goes out as the
+// `anon` role. Our RLS grants `anon` nothing, and under RLS "not allowed" is
+// not an error — it is zero rows. So a read of a full account returns exactly
+// what a brand new account returns, and reconcile() responds by treating it as
+// a first sign-in and pushing this device's empty state up. That is how an app
+// with a working pull behaves as though it only pushes.
+console.log('\n=== an empty read must not be mistaken for an empty account ===');
+{
+  const { reconcile } = await import('../src/lib/syncEngine.js');
+
+  const phoneHistory = [{ id: 'p1', type: 'Lift', date: '2026-08-03' }];
+  const local = {
+    sessionHistory: { value: [], updatedAt: 0 },
+    settings: { value: { bands: { green: 80 } }, updatedAt: 0 },
+  };
+
+  // 1. The silent-anon shape: a "successful" read that returned nothing.
+  const pushed = {};
+  const res = await reconcile({
+    userId: 'user-1',
+    readLocal: (c) => local[c] ?? { value: undefined, updatedAt: 0 },
+    writeLocal: () => {},
+    pull: async () => ({}),
+    push: async (u, c, v) => {
+      pushed[c] = v;
+      return { ok: true };
+    },
+  });
+
+  // reconcile cannot tell the difference — and should not have to. What it
+  // must do is report the read as empty so the layer above, and the screen,
+  // can say so instead of implying everything is fine.
+  assert(res.remoteCollections === 0, 'an empty read must be reported as 0 collections');
+  assert(res.remoteSessions === 0, 'an empty read must be reported as 0 sessions');
+  console.log('  an empty read is reported as empty, not hidden behind "synced"');
+
+  // 2. The same call with the session intact returns the account, and the
+  //    counts distinguish it from case 1 beyond any doubt.
+  const ok = await reconcile({
+    userId: 'user-1',
+    readLocal: (c) => local[c] ?? { value: undefined, updatedAt: 0 },
+    writeLocal: () => {},
+    pull: async () => ({ sessionHistory: { value: phoneHistory, updatedAt: 5000 } }),
+    push: async () => ({ ok: true }),
+  });
+  assert(ok.remoteCollections === 1, 'a real read must report the rows it received');
+  assert(ok.remoteSessions === 1, 'a real read must report the sessions it received');
+  console.log('  a real read reports what it received, so the two are distinguishable');
+
+  // 3. The guard pullAll runs before it will believe any answer at all.
+  const { verifySession } = await import('../src/lib/syncEngine.js');
+  const refuses = (session, userId, why) => {
+    let threw = false;
+    let message = '';
+    try {
+      verifySession(session, userId);
+    } catch (err) {
+      threw = true;
+      message = err.message;
+    }
+    assert(threw, why);
+    return message;
+  };
+
+  // No session at all: this is the case that used to sail through as the anon
+  // role and come back with an empty, error-free result set.
+  const noSession = refuses(null, 'user-1', 'a missing session must be refused, not sent as anon');
+  assert(/not signed in/i.test(noSession), `the message must say why: ${noSession}`);
+
+  // A session object with no token is the same hazard wearing a disguise.
+  refuses({ user: { id: 'user-1' } }, 'user-1', 'a session without a token must be refused');
+
+  // Signed in as somebody else: reading would return their rows, or none, and
+  // either way merging them into this device's data is wrong.
+  refuses(
+    { access_token: 'tok', user: { id: 'someone-else' } },
+    'user-1',
+    'a session for a different account must be refused',
+  );
+
+  // And the good case must pass cleanly.
+  let ok3 = true;
+  try {
+    verifySession({ access_token: 'tok', user: { id: 'user-1' } }, 'user-1');
+  } catch {
+    ok3 = false;
+  }
+  assert(ok3, 'a valid session for the right user must be accepted');
+  console.log('  a read without a verified session is refused instead of read as anon');
+
+  // The guard is only worth anything if pullAll actually runs it.
+  const src = await import('node:fs').then((fs) =>
+    fs.readFileSync(new URL('../src/lib/syncEngine.js', import.meta.url), 'utf8'),
+  );
+  const pullBody = src.split('export async function pullAll')[1] ?? '';
+  assert(
+    /assertAuthenticatedAs\(userId\)/.test(pullBody.split('\n}')[0]),
+    'pullAll must verify the session before trusting its result',
+  );
+  console.log('  pullAll runs it before trusting the result');
+}
+
 // --- 6d. reconcile(): a failed upload is reported, not swallowed ----------
 console.log('\n=== reconcile: upload failure ===');
 {

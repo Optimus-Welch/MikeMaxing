@@ -21,7 +21,26 @@ const state = {
   pending: 0,
   lastSyncedAt: null,
   error: null,
+  // What the last pull actually returned. Reported to the UI because "it says
+  // synced but my history is not here" is otherwise unanswerable from the
+  // screen: you cannot tell a genuinely empty account from a read that came
+  // back empty for a reason nobody surfaced.
+  lastPull: null,
 };
+
+// A pull that never settles is worse than one that fails: the status sits on
+// "Syncing…" forever and no retry is scheduled, because nothing ever concluded.
+const PULL_TIMEOUT_MS = 15000;
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+    }),
+  ]);
+}
 
 const listeners = new Set();
 
@@ -108,6 +127,8 @@ function scheduleFlush(delay = 1500) {
 
 // -- full reconcile --------------------------------------------------------
 
+let syncing = null;
+
 /**
  * Merge local and cloud in both directions.
  *
@@ -116,20 +137,42 @@ function scheduleFlush(delay = 1500) {
  */
 export async function syncNow() {
   if (!hasCloud || !state.user || !state.online) return;
+  // Coalesce. Sign-in is reported twice (see startSync), the tab becoming
+  // visible can land on top of that, and a retry may fire while one is still
+  // in flight — all of which should mean one reconcile, not four racing to
+  // write the same collections.
+  if (syncing) return syncing;
+  syncing = runSync().finally(() => {
+    syncing = null;
+  });
+  return syncing;
+}
 
+async function runSync() {
   emit({ status: 'syncing', error: null });
   try {
-    const result = await reconcile({
-      userId: state.user.id,
-      readLocal: readForSync,
-      writeLocal: writeCollectionFromRemote,
-    });
+    const result = await withTimeout(
+      reconcile({
+        userId: state.user.id,
+        readLocal: readForSync,
+        writeLocal: writeCollectionFromRemote,
+      }),
+      PULL_TIMEOUT_MS,
+      'Sync',
+    );
     // Anything queued while we were reconciling still needs sending.
     await flush();
+    if (!result.errors.length) resetRetries();
     emit({
       status: result.errors.length ? 'error' : 'synced',
       lastSyncedAt: Date.now(),
       error: result.errors[0] ?? null,
+      lastPull: {
+        at: Date.now(),
+        collections: result.remoteCollections,
+        sessions: result.remoteSessions,
+        applied: result.pulled,
+      },
     });
     return result;
   } catch (err) {
@@ -137,8 +180,36 @@ export async function syncNow() {
     // "offline" hides the one you can act on. A dropped connection is offline;
     // anything else — a row-level-security policy, a missing table, an expired
     // session — is a real error and its message is the useful part.
-    emit(offlineOrError(err, 'Sync failed'));
+    emit({
+      ...offlineOrError(err, 'Sync failed'),
+      lastPull: { at: Date.now(), failed: true, message: err?.message ?? 'Sync failed' },
+    });
+    scheduleRetry();
   }
+}
+
+// A failed hydrate used to be the end of it: nothing retried until you
+// happened to switch tabs. On the one load where it matters most — the first
+// one after signing in on a new device — that means an empty screen and no
+// second attempt.
+let retryTimer = null;
+let retryDelay = 0;
+const RETRY_DELAYS = [2000, 5000, 15000, 60000];
+
+function scheduleRetry() {
+  if (retryTimer) return;
+  const delay = RETRY_DELAYS[Math.min(retryDelay, RETRY_DELAYS.length - 1)];
+  retryDelay++;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    syncNow();
+  }, delay);
+}
+
+function resetRetries() {
+  clearTimeout(retryTimer);
+  retryTimer = null;
+  retryDelay = 0;
 }
 
 function offlineOrError(err, fallback) {
@@ -186,8 +257,17 @@ export function startSync() {
 
   onAuthChange((session) => {
     const user = session?.user ?? null;
-    const changed = user?.id !== state.user?.id;
+    if (!user) resetRetries();
     emit({ user, status: user ? 'syncing' : 'signed-out' });
-    if (user && changed) syncNow();
+
+    // Hydrate whenever we learn there is a session, not only when the account
+    // CHANGED. On a device that is already signed in, every load is a load
+    // where another device's work may need to come down. The old condition
+    // also made that hydrate depend on winning a race: onAuthChange reports
+    // through both getSession() and the INITIAL_SESSION event, and whichever
+    // arrived second saw "no change" and did nothing — so a single missed
+    // first attempt was never retried. syncNow() coalesces, so asking twice
+    // costs one round trip.
+    if (user) syncNow();
   });
 }
