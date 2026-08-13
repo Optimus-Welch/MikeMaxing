@@ -778,6 +778,130 @@ console.log('\n=== every sync status is described, and described correctly ===')
   console.log('  a failed upload reports its actual reason');
 }
 
+// --- 6j. the magic-link callback -----------------------------------------
+// Sign-in never completed on any device, silently. Two independent causes, on
+// the same code path, either of which alone is fatal.
+console.log('\n=== magic-link callback ===');
+{
+  const { readAuthParamsFromUrl } = await import('../src/lib/auth.js');
+
+  // CAUSE 1: where the code lands. This is a HashRouter app and the redirect
+  // target ends in `#/`, so the provider produces `…/#/?code=abc`. supabase's
+  // own helper does `new URLSearchParams(url.hash.substring(1))`, which turns
+  // `/?code=abc` into one parameter NAMED `/?code`. The code is in the URL and
+  // supabase cannot see it.
+  const naive = new URLSearchParams(
+    new URL('https://x.github.io/MikeMaxing/#/?code=abc123').hash.substring(1),
+  );
+  assert(naive.get('code') === null, 'precondition: the naive hash parse misses the code');
+
+  const inHash = readAuthParamsFromUrl('https://x.github.io/MikeMaxing/#/?code=abc123');
+  assert(inHash.code === 'abc123', `a code after the hash route must be found, got ${inHash.code}`);
+
+  // The ordinary placement must still work, and win when both are present.
+  const inSearch = readAuthParamsFromUrl('https://x.github.io/MikeMaxing/?code=xyz789#/');
+  assert(inSearch.code === 'xyz789', 'a code in the query string must be found');
+  const both = readAuthParamsFromUrl('https://x.github.io/MikeMaxing/?code=search#/?code=hash');
+  assert(both.code === 'search', 'the query string must win, matching supabase precedence');
+
+  // Implicit-style hashes must not regress.
+  const implicit = readAuthParamsFromUrl('https://x.github.io/MikeMaxing/#error=access_denied');
+  assert(implicit.error === 'access_denied', 'a bare hash error must still be read');
+
+  // A normal load has nothing to do.
+  const clean = readAuthParamsFromUrl('https://x.github.io/MikeMaxing/#/');
+  assert(!clean.present, 'an ordinary URL must report no auth params');
+  assert(clean.code === null, 'an ordinary URL must yield no code');
+  console.log('  the code is found in the query string, after the hash route, or neither');
+
+  // CAUSE 2: ordering. supabase-js reads the URL exactly once, inside
+  // _initialize(), which runs when the client is CONSTRUCTED. The client is
+  // lazy, so nothing constructs it at import — and startSync() stripped the
+  // `?code=` before anything ever called getSupabase(). The app deleted the
+  // code it needed, then built the client that would have exchanged it.
+  const { readFileSync } = await import('node:fs');
+  const store = readFileSync(new URL('../src/lib/syncStore.js', import.meta.url), 'utf8');
+
+  assert(
+    !/cleanAuthParamsFromUrl/.test(store),
+    'startSync must not clean the URL itself — initAuth does it after the exchange',
+  );
+  assert(/initAuth\(\)/.test(store), 'startSync must run initAuth to complete a magic-link landing');
+
+  const auth = readFileSync(new URL('../src/lib/auth.js', import.meta.url), 'utf8');
+  const initBody = auth.slice(auth.indexOf('export async function initAuth'));
+  const constructAt = initBody.indexOf('getSupabase()');
+  const cleanAt = initBody.indexOf('cleanAuthParamsFromUrl()');
+  const exchangeAt = initBody.indexOf('exchangeCodeForSession');
+  assert(constructAt !== -1, 'initAuth must construct the client');
+  assert(cleanAt !== -1, 'initAuth must clean the URL');
+  assert(
+    constructAt < cleanAt,
+    'initAuth must construct the client BEFORE clearing the code from the URL',
+  );
+  assert(
+    exchangeAt !== -1 && exchangeAt < auth.length,
+    'initAuth must be able to exchange a code supabase did not recognise',
+  );
+  console.log('  the client is constructed before the URL is cleaned, never after');
+
+  // The same thing demonstrated rather than asserted about, since the whole
+  // failure was a sequencing one. This stand-in reads the URL at CONSTRUCTION,
+  // which is exactly what supabase-js's _initialize() does.
+  {
+    const LANDED = 'https://x.github.io/MikeMaxing/?code=abc123#/';
+    let url = LANDED;
+    const construct = () => ({ codeSeen: readAuthParamsFromUrl(url).code });
+    const clean = () => {
+      url = 'https://x.github.io/MikeMaxing/#/';
+    };
+
+    // The old sequence: startSync cleaned first, and the lazy client was built
+    // afterwards by onAuthChange.
+    clean();
+    assert(
+      construct().codeSeen === null,
+      'precondition: cleaning before constructing loses the code — this was the bug',
+    );
+
+    // The new sequence.
+    url = LANDED;
+    const client = construct();
+    clean();
+    assert(client.codeSeen === 'abc123', 'constructing first must see the code');
+    assert(!/code=/.test(url), 'and the URL must still end up clean afterwards');
+    console.log('  demonstrated: clean-then-construct loses it, construct-then-clean keeps it');
+  }
+
+  // Cleaning must remove the code from BOTH placements, or a spent code gets
+  // retried on the next load.
+  const cleaned = [];
+  globalThis.window = {
+    location: { href: 'https://x.github.io/MikeMaxing/#/?code=abc123' },
+    history: { replaceState: (_s, _t, url) => cleaned.push(url) },
+  };
+  const { cleanAuthParamsFromUrl } = await import('../src/lib/auth.js');
+  assert(cleanAuthParamsFromUrl() === true, 'a code in the hash must be recognised as cleanable');
+  assert(cleaned.length === 1, 'the URL must be rewritten once');
+  assert(!/code=/.test(cleaned[0]), `the code must be gone, got ${cleaned[0]}`);
+  assert(/#\//.test(cleaned[0]), `the app route must survive, got ${cleaned[0]}`);
+  delete globalThis.window;
+  console.log('  cleaning removes the code from the hash as well as the query string');
+
+  // CAUSE 3: the service worker must not reload a first-ever visit, which on a
+  // magic-link landing discards the exchange in flight.
+  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
+  assert(
+    /const wasControlled = Boolean\(navigator\.serviceWorker\.controller\)/.test(main),
+    'the update-reload must sample whether a controller already existed',
+  );
+  assert(
+    /if \(!wasControlled \|\| reloading\) return/.test(main),
+    'a first registration must not trigger the update reload',
+  );
+  console.log('  a first-ever service worker registration no longer reloads the page');
+}
+
 // --- 7. config guards -----------------------------------------------------
 console.log('\n=== config guards ===');
 {

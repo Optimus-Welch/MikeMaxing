@@ -9,11 +9,18 @@ import App from './App.jsx'
 // until you happen to reload. That is how a "current" deploy can look like
 // nothing changed. Reload once, the first time control changes hands.
 if ('serviceWorker' in navigator) {
+  // Only an UPDATE should reload — and this must be sampled NOW, before any
+  // worker claims the page. The previous version only guarded against
+  // reloading twice, not against reloading on the very first registration:
+  // with clientsClaim, a first-ever visit goes uncontrolled -> controlled and
+  // fired a reload nobody needed. On the one page load where that is
+  // expensive — landing from a magic link, mid PKCE exchange — it threw away
+  // the in-flight sign-in and left the URL with a spent code.
+  const wasControlled = Boolean(navigator.serviceWorker.controller);
+
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    // Guard against a reload loop: only act when we were already controlled,
-    // i.e. this is an UPDATE, not the very first registration.
-    if (reloading) return;
+    if (!wasControlled || reloading) return;
     reloading = true;
     window.location.reload();
   });

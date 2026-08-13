@@ -2,7 +2,7 @@
 // flushes queued writes, and exposes a small observable status for the UI.
 
 import { hasCloud } from './supabaseClient.js';
-import { onAuthChange, cleanAuthParamsFromUrl } from './auth.js';
+import { onAuthChange, initAuth } from './auth.js';
 import { reconcile, pushCollection, SYNCED_COLLECTIONS } from './syncEngine.js';
 import {
   readForSync,
@@ -29,6 +29,7 @@ import {
 export const SYNC_STATUSES = [
   'local-only', // no cloud project configured in this build
   'signed-out', // configured, but this device has no session — sync never runs
+  'signin-failed', // a magic link was followed and produced no session
   'syncing', // a reconcile is in flight
   'synced', // finished, nothing queued
   'offline', // no network; queue is intact and will go up on reconnect
@@ -265,9 +266,6 @@ export function startSync() {
   if (started || typeof window === 'undefined') return;
   started = true;
 
-  // Clear the PKCE `?code=` once supabase-js has exchanged it.
-  cleanAuthParamsFromUrl();
-
   // Any write anywhere in the app schedules an upload.
   setWriteListener(() => {
     emit({});
@@ -290,10 +288,30 @@ export function startSync() {
     return;
   }
 
+  // Complete any magic-link landing BEFORE subscribing, and before anything
+  // touches the URL. initAuth constructs the client (which is what reads the
+  // code out of the URL), waits for the exchange, and only then tidies up.
+  initAuth().then(({ error, attempted }) => {
+    // A link that was followed and still produced nothing is the one failure
+    // that used to be completely silent: the screen simply said "Not signed
+    // in", identical to never having tried.
+    if (attempted && error) emit({ status: 'signin-failed', error });
+  });
+
   onAuthChange((session) => {
     const user = session?.user ?? null;
     if (!user) resetRetries();
-    emit({ user, status: user ? 'syncing' : 'signed-out' });
+
+    // Do not let a plain "signed out" overwrite a reported sign-in failure.
+    // Both are sessionless, but only one of them means you tried — and the
+    // whole point of surfacing it is that they used to be indistinguishable.
+    const status = user
+      ? 'syncing'
+      : state.status === 'signin-failed'
+        ? 'signin-failed'
+        : 'signed-out';
+
+    emit({ user, status, error: user ? null : state.error });
 
     // Hydrate whenever we learn there is a session, not only when the account
     // CHANGED. On a device that is already signed in, every load is a load

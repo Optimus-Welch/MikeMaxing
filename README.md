@@ -144,6 +144,35 @@ than a person:
 - `exerciseLibrary` — reference data that ships inside the bundle; the cloud
   can only ever offer an older copy than the running build
 
+### The magic-link callback
+
+supabase-js reads the URL **exactly once, inside `_initialize()`, which runs
+when the client is constructed**. Our client is lazy (`getSupabase()`), so
+nothing constructs it at import — which means the order of these two lines is
+load-bearing:
+
+```js
+cleanAuthParamsFromUrl();   // deletes ?code=
+onAuthChange(...)           // first getSupabase() — constructs the client
+```
+
+That is backwards, and it silently destroyed every sign-in: the app deleted the
+code it needed, then built the client that would have exchanged it. `initAuth()`
+now constructs first, waits for the exchange, and cleans afterwards.
+
+Second trap, independent and also fatal on its own: this is a HashRouter app
+whose redirect target ends in `#/`, so the provider produces `…/#/?code=abc`.
+supabase's helper does `new URLSearchParams(url.hash.substring(1))`, which
+parses `/?code=abc` as a single parameter *named* `/?code`. `readAuthParamsFromUrl`
+splits the hash at its first `?` and reads what follows, so the code is found in
+either placement — and `initAuth` exchanges it explicitly when supabase did not
+recognise it.
+
+Related: the service-worker update reload now samples
+`navigator.serviceWorker.controller` **before** any worker claims the page. It
+previously fired on a first-ever registration too, and on a magic-link landing
+that reload discarded the exchange in flight.
+
 ### Saying which state sync is in
 
 Six states (`SYNC_STATUSES`), and the difference between two of them is the
