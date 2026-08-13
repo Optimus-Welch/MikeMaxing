@@ -63,6 +63,12 @@ export default function SyncPanel() {
       )}
       {sync.error && <p className="hint warn">{sync.error}</p>}
 
+      {/* What the last read actually returned.
+          "Synced" on a device showing none of your history is otherwise an
+          unanswerable screen: you cannot tell an account that really is empty
+          from a read that came back empty for a reason nobody printed. */}
+      {sync.user && <LastPull pull={sync.lastPull} />}
+
       <p className="hint build-stamp">
         Build {__BUILD_SHA__} · {new Date(__BUILD_TIME__).toLocaleString()}
       </p>
@@ -72,7 +78,7 @@ export default function SyncPanel() {
           <p className="hint">Signed in as {sync.user.email}</p>
           <div className="sync-actions">
             <button type="button" className="btn-secondary" onClick={() => syncNow()}>
-              Sync now
+              Pull from cloud
             </button>
             <button type="button" className="btn-secondary" onClick={() => signOut()}>
               Sign out
@@ -120,5 +126,41 @@ export default function SyncPanel() {
         )
       ) : null}
     </section>
+  );
+}
+
+// Reports the last read from the cloud in the terms you would actually ask
+// about it: did it happen, did it come back, and how much was in it.
+function LastPull({ pull }) {
+  if (!pull) return <p className="hint">No cloud read yet on this device.</p>;
+
+  const when = new Date(pull.at).toLocaleTimeString();
+
+  if (pull.failed) {
+    return (
+      <p className="hint warn">
+        Last cloud read failed at {when}: {pull.message}
+      </p>
+    );
+  }
+
+  // Zero rows from a read that definitely ran and was definitely authenticated
+  // is real information — it means the account is genuinely empty, not that
+  // something swallowed the answer.
+  if (pull.collections === 0) {
+    return (
+      <p className="hint">
+        Last cloud read at {when} returned nothing — this account has no data stored yet.
+      </p>
+    );
+  }
+
+  return (
+    <p className="hint">
+      Last cloud read at {when}: {pull.collections} collection
+      {pull.collections === 1 ? '' : 's'}, {pull.sessions} logged session
+      {pull.sessions === 1 ? '' : 's'}
+      {pull.applied > 0 ? ` · ${pull.applied} applied to this device` : ' · already up to date'}.
+    </p>
   );
 }

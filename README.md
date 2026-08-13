@@ -79,8 +79,9 @@ Reads stay **synchronous and local**, which is why nothing above
 
 - **read** — localStorage, synchronously, signed in or not, online or not
 - **write** — localStorage immediately, then queued for upload
-- **sync** — pull on sign-in, on reconnect, and when the tab becomes visible;
-  merge; flush the queue
+- **sync** — pull on every load that has a session, on reconnect, and when the
+  tab becomes visible; merge; flush the queue. Time-boxed, coalesced, and
+  retried with backoff, so a single failed attempt is not the end of it
 
 Local-first is the design, not a shortcut: a read that awaits a round trip is a
 read that hangs, and this gets used in basement gyms.
@@ -105,6 +106,27 @@ factory defaults seconds beforehand. Stamped with the wall clock those defaults
 would be the newest version of every last-write-wins collection anywhere, and
 the merge would push them over the settings you had tuned on your phone. A zero
 says what is true: this is a placeholder, anything real beats it.
+
+**A pull verifies its own session first** (`verifySession`). This one is not
+defensive padding — it is the difference between reading your account and
+reading nothing. supabase-js attaches the *publishable* key as the bearer token
+whenever it cannot find a session:
+
+```js
+async _getAccessToken() {
+  return (await this._getSessionToken()) ?? this.supabaseKey
+}
+```
+
+The request still goes out, as the `anon` role. RLS grants `anon` nothing, and
+under RLS "not allowed to see these rows" is not an error — it is zero rows. So
+a read of a full account returns `{ data: [], error: null }`, identical to a
+brand new one, and `reconcile()` does the reasonable thing with an empty cloud:
+treats it as a first sign-in and pushes local state up. The result is an app
+with a working pull that behaves exactly as though it only ever pushes, showing
+*No sessions logged yet* on a device whose account is full, with nothing
+anywhere to explain it. `pullAll` now refuses to believe any answer it did not
+ask for as a verified session.
 
 **Pulled values notify the UI.** `writeCollectionFromRemote` fires a
 per-collection subscription that pages read through `useCollection`. Writing
