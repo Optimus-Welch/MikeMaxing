@@ -144,6 +144,26 @@ than a person:
 - `exerciseLibrary` — reference data that ships inside the bundle; the cloud
   can only ever offer an older copy than the running build
 
+### Saying which state sync is in
+
+Six states (`SYNC_STATUSES`), and the difference between two of them is the
+whole point: **`offline` is a queue that will drain**, **`signed-out` is a queue
+that will not**, because without a session `syncNow()` and `flush()` both return
+immediately. They need opposite reactions — wait, versus sign in — so they can
+never share a label. `syncMessages.js` maps every status to words and throws on
+an unmapped one, rather than letting a new state inherit whichever branch
+happens to sit last.
+
+The count that used to appear in the badge is gone. `pending` counts
+*collections*, not workouts, so "2" meant two internal buckets were dirty and
+read like two lost sessions.
+
+**On iOS, an installed PWA has its own storage container, separate from
+Safari's.** A magic link opened in Safari or in Mail's built-in browser signs
+*that* browser in; the app on your Home Screen keeps its own storage and stays
+signed out, with nothing on screen to suggest the two are different places. The
+sign-in card says so when it detects it is running standalone.
+
 ## CI
 
 `.github/workflows/ci.yml` runs `npm ci`, `npm run check` and `npm run build`

@@ -11,12 +11,26 @@ import { subscribeSync, syncNow } from '../lib/syncStore.js';
 
 const STATUS_TEXT = {
   'local-only': 'Local only — no cloud project configured for this build.',
-  'signed-out': 'Signed out. Your data is on this device only.',
+  'signed-out': 'Not signed in on this device — nothing is syncing.',
   syncing: 'Syncing…',
   synced: 'Everything is synced.',
   offline: 'Offline — changes are saved here and will upload when you reconnect.',
   error: 'Sync problem — changes are safe locally and will retry.',
 };
+
+// An installed PWA on iOS gets its own storage container, separate from
+// Safari's. A magic link opened in Safari or in Mail's built-in browser signs
+// THAT browser in; the app on your Home Screen keeps its own storage and stays
+// signed out, with no indication the two are different places. It is the most
+// common way a device you are sure you signed in on turns out not to be.
+function isStandalone() {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    // iOS Safari predates the display-mode media query for this.
+    window.navigator.standalone === true
+  );
+}
 
 export default function SyncPanel() {
   const [sync, setSync] = useState(null);
@@ -56,11 +70,21 @@ export default function SyncPanel() {
         <span>{STATUS_TEXT[sync.status] ?? sync.status}</span>
       </div>
 
-      {sync.pending > 0 && (
-        <p className="hint">
-          {sync.pending} change{sync.pending === 1 ? '' : 's'} waiting to upload.
-        </p>
-      )}
+      {/* Say what the queue means, which depends entirely on whether anything
+          is draining it. Signed out, "waiting to upload" is not true — nothing
+          is waiting, because nothing is trying. */}
+      {sync.pending > 0 &&
+        (sync.user ? (
+          <p className="hint">
+            {sync.pending} collection{sync.pending === 1 ? '' : 's'} waiting to upload.
+          </p>
+        ) : (
+          <p className="hint warn">
+            {sync.pending} collection{sync.pending === 1 ? '' : 's'} changed on this device and not
+            uploaded. They stay here, safely, until you sign in — nothing is being retried in the
+            background.
+          </p>
+        ))}
       {sync.error && <p className="hint warn">{sync.error}</p>}
 
       {/* What the last read actually returned.
@@ -95,6 +119,14 @@ export default function SyncPanel() {
               Check your email — the link signs you straight in, no password. Open it on whichever
               device you want to sync.
             </p>
+            {isStandalone() && (
+              <p className="hint warn">
+                You are in the installed app, which has its own separate storage from Safari.
+                Opening the link in Safari or in Mail&apos;s built-in browser signs <em>that</em>{' '}
+                browser in and leaves this app signed out. Long-press the link and choose to open
+                it in Autopilot, or paste it into this app.
+              </p>
+            )}
             <button type="button" className="btn-secondary" onClick={() => setSent(false)}>
               Use a different email
             </button>
@@ -122,6 +154,13 @@ export default function SyncPanel() {
               No password and no signup step — the first link both creates the account and signs
               you in.
             </p>
+            {isStandalone() && (
+              <p className="hint">
+                Signed in on your phone but seeing this screen? The installed app keeps its own
+                storage, separate from Safari — signing in there does not sign in here. Send
+                yourself a link and open it from inside this app.
+              </p>
+            )}
           </form>
         )
       ) : null}

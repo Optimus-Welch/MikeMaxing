@@ -13,6 +13,28 @@ import {
   localUpdatedAt,
 } from './storage.js';
 
+/**
+ * Every status the store can be in. Exhaustive on purpose, and exported so the
+ * UI maps from this list rather than guessing.
+ *
+ * This existing as a list is a direct consequence of the bug it replaces: the
+ * badge handled five of these explicitly and let the sixth fall through to a
+ * trailing `pending ? \`${pending} unsynced\`` branch. That sixth was
+ * `signed-out` — so a phone with no session at all displayed "2 UNSYNCED",
+ * which reads as "two uploads are stuck". Nothing was stuck. Nothing was even
+ * being attempted, because syncNow() returns immediately without a user. The
+ * one state where sync is not running at all was being reported as the state
+ * where it is running and behind.
+ */
+export const SYNC_STATUSES = [
+  'local-only', // no cloud project configured in this build
+  'signed-out', // configured, but this device has no session — sync never runs
+  'syncing', // a reconcile is in flight
+  'synced', // finished, nothing queued
+  'offline', // no network; queue is intact and will go up on reconnect
+  'error', // something failed and said why
+];
+
 const state = {
   configured: hasCloud,
   user: null,
@@ -83,7 +105,12 @@ export async function flush() {
   flushing = true;
 
   try {
-    let failed = false;
+    // Keep the FIRST real reason, not a summary of it. This used to emit
+    // "Some changes could not be uploaded — will retry." and drop res.error on
+    // the floor, so an upload rejected by a policy, a schema mismatch, or an
+    // expired session all presented identically and none of them said which.
+    // A failure you cannot name is a failure you cannot fix.
+    const failures = [];
     for (const collection of pendingCollections()) {
       if (!SYNCED_COLLECTIONS.includes(collection)) {
         clearPending(collection);
@@ -97,13 +124,21 @@ export async function flush() {
         localUpdatedAt(collection) || Date.now(),
       );
       if (res.ok) clearPending(collection);
-      else failed = true;
+      else failures.push(`${collection}: ${res.error}`);
     }
-    emit(
-      failed
-        ? { status: 'error', error: 'Some changes could not be uploaded — will retry.' }
-        : { status: 'synced', lastSyncedAt: Date.now(), error: null },
-    );
+    if (failures.length) {
+      emit({
+        status: 'error',
+        error:
+          failures.length === 1
+            ? `Upload failed — ${failures[0]}`
+            : `${failures.length} uploads failed — ${failures[0]} (and ${failures.length - 1} more)`,
+      });
+      scheduleRetry();
+    } else {
+      resetRetries();
+      emit({ status: 'synced', lastSyncedAt: Date.now(), error: null });
+    }
   } catch (err) {
     // Either way the queue is kept and retried; the difference is only what we
     // tell you about why nothing is moving.

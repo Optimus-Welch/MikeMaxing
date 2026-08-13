@@ -1188,29 +1188,83 @@ button:focus-visible {
   flex: 1;
 }
 
-.sync-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  margin-bottom: 12px;
-  border-radius: 999px;
+/* The ambient indicator on Today.
+   A full-width banner rather than a pill: it now carries a sentence explaining
+   what the state means and what to do about it, and "Not signed in" needs to
+   be readable at a glance from across a gym. */
+.sync-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-muted);
-  font-size: 0.76rem;
+  text-align: left;
+  font: inherit;
+}
+
+/* It is a <button> when tapping it leads somewhere useful. */
+button.sync-banner {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button.sync-banner:active {
+  background: var(--surface-3, var(--surface-2));
+}
+
+.sync-banner .sync-dot {
+  margin-top: 6px;
+}
+
+.sync-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sync-banner-title {
+  font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  color: var(--text);
 }
 
-.sync-badge.is-offline .sync-dot {
+.sync-banner-detail {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.sync-banner-go {
+  align-self: center;
+  font-size: 1.2rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.sync-banner.is-warn {
+  border-color: color-mix(in srgb, var(--orange) 40%, var(--border));
+}
+.sync-banner.is-warn .sync-dot {
   background: var(--orange);
 }
-.sync-badge.is-error .sync-dot {
+
+.sync-banner.is-bad {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+}
+.sync-banner.is-bad .sync-dot {
   background: var(--red);
 }
-.sync-badge.is-syncing .sync-dot {
+
+.sync-banner.is-busy .sync-dot {
   background: var(--accent);
 }
 
