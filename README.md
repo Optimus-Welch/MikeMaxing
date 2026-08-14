@@ -419,9 +419,56 @@ and 80 lb-barbell ceilings. Adding a new cap-beating variation is a data
 edit, not a code change.
 
 **Logging.** Each exercise expands into set rows capturing reps, weight and
-optional RPE, with weight pre-filled from the last time you did that
-exercise. Only rows you actually touch are saved — a pre-filled row is a
-suggestion, not a record that the set happened.
+optional RPE, with weight pre-filled from the progression suggestion. Only
+rows you actually touch are saved — a pre-filled row is a suggestion, not a
+record that the set happened.
+
+### Progressive overload
+
+`progression.js` decides what to load, from what you actually logged. Three
+steps kept separate because they fail differently: **assess** the last
+session, **adjust** the weight, **explain** why in one line.
+
+**It reads history per location.** Home caps dumbbells at 52.5 and the barbell
+at 80; Work has neither. A Home session is not evidence about what you can
+lift at Work, and a Work session read at Home produces a number the equipment
+cannot make.
+
+**"Room to spare" without RPE.** There is no RPE input in run mode, so `rpe`
+is null on every set ever logged. The verdict comes from reps against what was
+prescribed:
+
+| Last session | Verdict |
+|---|---|
+| every set met its prescribed reps | **progress** — one equipment increment up |
+| short somewhere, but ≥75% of prescribed volume | **hold** |
+| below 75% of prescribed volume | **back off** 10% |
+| last set below 60% of the first (a fade) | **back off** 10% |
+
+The fade rule is the proxy for grinding: 10/10/10 and 12/11/5 average out
+similarly, but the second one tells you the weight won. A logged RPE, if one
+ever exists, overrides all of it.
+
+**Every suggestion is loadable.** `LOCATION_LOAD_STEPS` holds the real
+increments — Home's dumbbells move in 2.5 lb steps, its barbell in 5 — and
+weights are snapped to them and clamped to the ceiling. At the Home cap with a
+progress verdict, reps move instead of load; at the cap *and* the top of the
+rep range, it says to swap to a harder variation rather than pretending.
+
+**Rep-target changes adjust the load** at 2.5% per rep, clamped to ±15%,
+because readiness moves the rep range between sessions and a weight programmed
+for 10 is not the weight for 5. Compared against last session's *target*, not
+what was achieved — using achieved reps charges for the same miss twice.
+
+**No invented starting weights.** With no history for a movement it seeds from
+a related lift you have logged (90% within the same `variationGroup`, 80%
+within the same pattern) and names the source. With nothing to infer from it
+asks rather than guessing — an absolute starting load for a movement with no
+evidence behind it is the one number here where being wrong is a safety
+question.
+
+Suggestions are overridable: a stepper on the session preview that moves in
+the equipment's real increment, and the weight field in run mode.
 
 ## PWA install
 

@@ -20,6 +20,7 @@ import {
   PATTERN_LABELS,
   LOCATION_LOAD_CAPS,
 } from './exercises.js';
+import { suggestFor } from './progression.js';
 
 // -- seeded RNG ------------------------------------------------------------
 // mulberry32: tiny, fast, good enough for picking exercises. Seeded so a
@@ -305,6 +306,7 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride }) {
       reps: null,
       seconds,
       rpe: plan.rpe,
+      repCeiling: null,
     };
   }
 
@@ -337,6 +339,9 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride }) {
     reps,
     seconds: null,
     rpe: plan.rpe,
+    // The top of today's band range. Progression needs it to know when reps
+    // have nowhere left to go and the movement itself has to get harder.
+    repCeiling: hi,
   };
 }
 
@@ -406,19 +411,19 @@ export function generateLiftSession({
     usedGroups.add(exercise.variationGroup);
     usedIds.add(exercise.id);
 
-    exercises.push({
-      exerciseId: exercise.id,
-      name: exercise.name,
-      pattern: exercise.movementPattern,
-      patternLabel: PATTERN_LABELS[exercise.movementPattern],
-      variationGroup: exercise.variationGroup,
-      emphasis: slot.emphasis,
-      primaryMuscles: exercise.primaryMuscles,
-      loadNotes: exercise.loadNotes ?? null,
-      capStrategy: exercise.capStrategy ?? null,
-      repeatedGroup: relaxed, // surfaced in the UI as "limited options here"
-      ...prescribeFor({ exercise, emphasis: slot.emphasis, band, rng }),
-    });
+    // Shared with both swap paths, so a generated lift and a swapped-in one
+    // are prescribed — and progressed — identically.
+    exercises.push(
+      makeSessionExercise({
+        exercise,
+        emphasis: slot.emphasis,
+        band,
+        rng,
+        relaxed, // surfaced in the UI as "limited options here"
+        location,
+        sessionHistory,
+      }),
+    );
   }
 
   // Mark superset pairs so the UI can bracket them. A superset slot pairs with
@@ -491,7 +496,7 @@ export function swapExercise({
   const rng = makeRng(seed);
   const exercise = pick(candidates, rng);
 
-  return replaceExerciseAt(session, index, exercise, { relaxed, rng });
+  return replaceExerciseAt(session, index, exercise, { relaxed, rng, sessionHistory });
 }
 
 // -- explicit swap ---------------------------------------------------------
@@ -502,8 +507,18 @@ export function swapExercise({
  * identical objects — a swapped-in lift is prescribed exactly as if the
  * generator had chosen it.
  */
-export function makeSessionExercise({ exercise, emphasis, band, rng, relaxed = false }) {
-  return {
+export function makeSessionExercise({
+  exercise,
+  emphasis,
+  band,
+  rng,
+  relaxed = false,
+  location = null,
+  sessionHistory = [],
+}) {
+  const prescription = prescribeFor({ exercise, emphasis, band, rng });
+
+  const entry = {
     exerciseId: exercise.id,
     name: exercise.name,
     pattern: exercise.movementPattern,
@@ -514,8 +529,40 @@ export function makeSessionExercise({ exercise, emphasis, band, rng, relaxed = f
     loadNotes: exercise.loadNotes ?? null,
     capStrategy: exercise.capStrategy ?? null,
     repeatedGroup: relaxed,
-    ...prescribeFor({ exercise, emphasis, band, rng }),
+    ...prescription,
   };
+
+  // What to actually load, from what you logged here before. Attached to the
+  // entry so it flows through blocks -> run steps untouched, and so a swapped
+  // exercise gets its own suggestion rather than inheriting the old one's.
+  const suggestion = suggestFor({
+    exercise,
+    location,
+    sessionHistory,
+    target: prescription,
+    entry,
+  });
+
+  // Progression can push the reps up when the load is capped out at Home. If
+  // it does, the printed prescription has to follow — "4 × 10" beside a
+  // suggestion of 11 reps is the kind of small inconsistency that makes the
+  // whole screen untrustworthy.
+  const finalReps = suggestion.reps ?? entry.reps;
+  if (finalReps !== entry.reps && entry.reps != null) {
+    const scheme = SCHEMES.find((s) => s.id === entry.schemeId);
+    const redescribed = scheme?.describe({
+      sets: entry.sets,
+      reps: finalReps,
+      rpe: entry.rpe,
+    });
+    if (redescribed) {
+      entry.prescription = redescribed.prescription;
+      entry.detail = redescribed.detail;
+    }
+    entry.reps = finalReps;
+  }
+
+  return { ...entry, suggestion };
 }
 
 function reresolveSupersets(exercises) {
@@ -527,7 +574,7 @@ function reresolveSupersets(exercises) {
   });
 }
 
-function replaceExerciseAt(session, index, exercise, { relaxed = false, rng }) {
+function replaceExerciseAt(session, index, exercise, { relaxed = false, rng, sessionHistory = [] }) {
   const target = session.exercises[index];
   const replacement = makeSessionExercise({
     exercise,
@@ -535,6 +582,8 @@ function replaceExerciseAt(session, index, exercise, { relaxed = false, rng }) {
     band: session.band,
     rng,
     relaxed,
+    location: session.location,
+    sessionHistory,
   });
   const exercises = reresolveSupersets(
     session.exercises.map((e, i) => (i === index ? replacement : e)),
@@ -546,9 +595,9 @@ function replaceExerciseAt(session, index, exercise, { relaxed = false, rng }) {
  * Swap a slot to a specific exercise the user picked from the alternatives
  * list. Unlike swapExercise() this makes no choice of its own.
  */
-export function swapExerciseTo({ session, index, exercise, seed = 1 }) {
+export function swapExerciseTo({ session, index, exercise, seed = 1, sessionHistory = [] }) {
   if (!session.exercises[index] || !exercise) return session;
-  return replaceExerciseAt(session, index, exercise, { rng: makeRng(seed) });
+  return replaceExerciseAt(session, index, exercise, { rng: makeRng(seed), sessionHistory });
 }
 
 /**

@@ -74,6 +74,36 @@ export const LOCATION_LOAD_CAPS = {
   Home: { dumbbellPerHand: 52.5, barbellTotal: 80 },
 };
 
+// The smallest real weight change available, per location and load type.
+//
+// Progression is worthless if it suggests a weight the equipment cannot make.
+// Home's adjustable dumbbells move in 2.5 lb steps per hand; its adjustable
+// barbell and curl bar take plates in 5 lb total increments. Work is a full
+// gym: fixed dumbbells in 5 lb jumps, barbell in 5 lb total (2.5 a side), and
+// machine stacks in 10 lb pins.
+//
+// Data rather than logic, same as the caps above: changing a rack is an edit
+// here, not a code change.
+export const LOCATION_LOAD_STEPS = {
+  Work: { dumbbellPerHand: 5, barbellTotal: 5, machine: 10, cable: 5 },
+  Home: { dumbbellPerHand: 2.5, barbellTotal: 5, machine: null, cable: null },
+};
+
+/**
+ * Which load ceiling and step size govern this exercise.
+ *
+ * Returns null for bodyweight-only movements, which progress by reps rather
+ * than by load — suggesting "+5 lb" on a Dead Bug helps nobody.
+ */
+export function loadKindFor(exercise) {
+  const equipment = exercise?.equipment ?? [];
+  if (equipment.includes('barbell')) return 'barbellTotal';
+  if (equipment.includes('dumbbells')) return 'dumbbellPerHand';
+  if (equipment.includes('machine')) return 'machine';
+  if (equipment.includes('cable')) return 'cable';
+  return null;
+}
+
 // Patterns where Home's 80 lb barbell / 52.5 lb dumbbells are the binding
 // constraint — a straight bilateral set would just be too light to be worth
 // doing. The generator prefers capFriendly options for these at Home.

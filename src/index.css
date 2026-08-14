@@ -1275,3 +1275,50 @@ button.sync-banner:active {
   padding-top: 10px;
   margin-top: 12px;
 }
+
+/* ---- progressive overload ---------------------------------------------- */
+
+/* The suggested load and its reason, under the exercise name in the preview. */
+.bi-progression {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.weight-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-value {
+  min-width: 4.5em;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.bi-why {
+  flex: 1;
+  min-width: 12em;
+  line-height: 1.35;
+}
+
+/* A back-off is worth noticing without being alarming — it is the app doing
+   its job, not an error. */
+.bi-why.is-back-off,
+.progression-note.is-back-off {
+  color: var(--orange);
+}
+
+.progression-note {
+  margin-top: 10px;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
