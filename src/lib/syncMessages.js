@@ -34,6 +34,17 @@ export function describeSync(status, pending = 0) {
         action: 'settings',
       };
 
+    case 'signin-failed':
+      return {
+        tone: 'bad',
+        short: 'Sign-in did not complete',
+        // The state that used to be invisible: you followed the link, it did
+        // nothing, and the screen said "Not signed in" — exactly what it says
+        // when you never tried.
+        detail: 'The link was opened but no session was created. Open Settings to try again.',
+        action: 'settings',
+      };
+
     case 'syncing':
       return { tone: 'busy', short: 'Syncing…', detail: null, action: null };
 

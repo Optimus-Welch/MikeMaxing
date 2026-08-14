@@ -12,6 +12,7 @@ import { subscribeSync, syncNow } from '../lib/syncStore.js';
 const STATUS_TEXT = {
   'local-only': 'Local only — no cloud project configured for this build.',
   'signed-out': 'Not signed in on this device — nothing is syncing.',
+  'signin-failed': 'The sign-in link was opened but no session was created.',
   syncing: 'Syncing…',
   synced: 'Everything is synced.',
   offline: 'Offline — changes are saved here and will upload when you reconnect.',
@@ -55,9 +56,9 @@ export default function SyncPanel() {
   const statusClass =
     sync.status === 'synced'
       ? 'is-ok'
-      : sync.status === 'error'
+      : sync.status === 'error' || sync.status === 'signin-failed'
         ? 'is-bad'
-        : sync.status === 'offline'
+        : sync.status === 'offline' || sync.status === 'signed-out'
           ? 'is-warn'
           : '';
 

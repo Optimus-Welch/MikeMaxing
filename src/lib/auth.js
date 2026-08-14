@@ -72,18 +72,153 @@ export function onAuthChange(handler) {
 }
 
 /**
- * Strip the PKCE `?code=` (and any `error=`) parameters after supabase-js has
- * consumed them, so a refresh does not retry a spent code and the address bar
- * is not left full of auth noise.
+ * Read the auth parameters out of the current URL, from wherever they landed.
+ *
+ * They can land in two places, and the second one defeats supabase-js's own
+ * parser. Its helper does:
+ *
+ *     new URLSearchParams(url.hash.substring(1))
+ *
+ * which is right for the implicit flow's `#access_token=…&expires_in=…`, but
+ * this app is a HashRouter app whose redirect target ends in `#/`. Append a
+ * query to that and you get `…/MikeMaxing/#/?code=abc`, whose hash minus the
+ * leading `#` is `/?code=abc` — parsed as a single parameter NAMED `/?code`.
+ * The code is right there in the URL and supabase cannot see it.
+ *
+ * So: split the hash at its first `?` and parse only what follows.
+ */
+export function readAuthParamsFromUrl(href = window.location.href) {
+  const url = new URL(href);
+
+  const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+  const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : hash;
+  const fromHash = new URLSearchParams(hashQuery);
+
+  // Search wins over hash, matching supabase's own precedence.
+  const get = (key) => url.searchParams.get(key) ?? fromHash.get(key);
+
+  return {
+    code: get('code'),
+    error: get('error'),
+    errorDescription: get('error_description'),
+    get present() {
+      return Boolean(this.code || this.error);
+    },
+  };
+}
+
+/**
+ * Strip the PKCE `?code=` (and any `error=`) parameters, so a refresh does not
+ * retry a spent code and the address bar is not left full of auth noise.
+ *
+ * Must run AFTER the exchange. See initAuth.
  */
 export function cleanAuthParamsFromUrl() {
   const url = new URL(window.location.href);
-  const hadAuthParams = ['code', 'error', 'error_description'].some((k) =>
-    url.searchParams.has(k),
-  );
-  if (!hadAuthParams) return false;
+  const keys = ['code', 'error', 'error_description'];
 
-  for (const key of ['code', 'error', 'error_description']) url.searchParams.delete(key);
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash || '#/'}`);
+  let changed = false;
+  for (const key of keys) {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  }
+
+  // Clean the hash too — a code that arrived as `#/?code=…` would otherwise
+  // survive and be retried, spent, on the next load.
+  let hash = url.hash;
+  if (hash.includes('?')) {
+    const [route, query] = [hash.slice(0, hash.indexOf('?')), hash.slice(hash.indexOf('?') + 1)];
+    const params = new URLSearchParams(query);
+    for (const key of keys) {
+      if (params.has(key)) {
+        params.delete(key);
+        changed = true;
+      }
+    }
+    const rest = params.toString();
+    hash = rest ? `${route}?${rest}` : route;
+  }
+
+  if (!changed) return false;
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${hash || '#/'}`);
   return true;
+}
+
+/**
+ * Establish the session from a magic-link landing, then tidy the URL.
+ *
+ * The order here is the entire point, and getting it backwards is what broke
+ * sign-in completely. supabase-js reads the URL exactly once, inside
+ * `_initialize()`, which runs when the client is CONSTRUCTED. Our client is
+ * lazy — `getSupabase()` builds it on first use, which was the fix for a CI
+ * crash — so "construct the client" is not something that happens on its own
+ * at import. startSync() called cleanAuthParamsFromUrl() first, on the theory
+ * that supabase had already consumed the code. With a lazy client it had not:
+ * the very first thing the app did on landing from the magic link was delete
+ * the `?code=` it needed, and only then build the client that would have
+ * exchanged it. No session, no error, every time.
+ *
+ * So: construct first, let the exchange finish, and only then clean up.
+ */
+export async function initAuth() {
+  if (!hasCloud) return { session: null, error: null, attempted: false };
+
+  const params = readAuthParamsFromUrl();
+
+  // Construct FIRST, unconditionally, before anything in this function can
+  // touch the URL. _initialize() parses window.location as it builds, so the
+  // client must exist while the parameters are still there. Nothing below may
+  // clean the URL ahead of this line.
+  const supabase = getSupabase();
+
+  // The provider can report a failure instead of a code — an expired or
+  // already-used link, most often. That is worth surfacing rather than
+  // silently rendering a signed-out screen.
+  if (params.error) {
+    cleanAuthParamsFromUrl();
+    return {
+      session: null,
+      error: params.errorDescription || params.error,
+      attempted: true,
+    };
+  }
+
+  // getSession() awaits initializePromise, so this waits for the exchange
+  // rather than racing it.
+  let session = null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    session = data?.session ?? null;
+  } catch {
+    /* fall through to the explicit exchange below */
+  }
+
+  // Belt and braces for the hash case above: if a code is still sitting in the
+  // URL unconsumed, supabase did not recognise it, so exchange it ourselves.
+  if (!session && params.code) {
+    try {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(params.code);
+      if (error) {
+        cleanAuthParamsFromUrl();
+        return { session: null, error: error.message, attempted: true };
+      }
+      session = data?.session ?? null;
+    } catch (err) {
+      cleanAuthParamsFromUrl();
+      return { session: null, error: err?.message ?? 'Sign-in link could not be used.', attempted: true };
+    }
+  }
+
+  cleanAuthParamsFromUrl();
+
+  return {
+    session,
+    error:
+      params.code && !session
+        ? 'The sign-in link did not produce a session. Links can only be used once — request a new one.'
+        : null,
+    attempted: params.present,
+  };
 }
