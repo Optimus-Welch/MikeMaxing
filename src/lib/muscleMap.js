@@ -43,6 +43,11 @@ export const REGION_LABELS = {
   calves: 'Calves',
 };
 
+/** The drawable region a library muscle name belongs to, or null. */
+export function regionFor(muscle) {
+  return MUSCLE_TO_REGION[muscle] ?? null;
+}
+
 /** Roll a muscleBreakdown() result up into 0..1 intensity per drawable region. */
 export function regionIntensities(muscles) {
   const totals = {};

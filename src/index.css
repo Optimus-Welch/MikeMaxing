@@ -1322,3 +1322,231 @@ button.sync-banner:active {
   line-height: 1.4;
   color: var(--text-muted);
 }
+
+/* ---- analytics --------------------------------------------------------- */
+
+.chart {
+  margin: 4px 0 12px;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart .axis {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart .gridline {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  opacity: 0.6;
+}
+
+.chart .tick {
+  fill: var(--text-dim);
+  font-size: 9px;
+  font-family: var(--sans);
+}
+
+.chart-empty-text {
+  fill: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--sans);
+}
+
+.chart .line-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart .line-area {
+  fill: var(--accent-dim);
+  stroke: none;
+}
+
+.chart .line-dot {
+  fill: var(--accent);
+}
+.chart .line-dot.is-warn {
+  fill: var(--orange);
+}
+.chart .line-dot.is-muted {
+  fill: var(--text-muted);
+}
+.chart .line-dot.is-dim {
+  fill: var(--text-dim);
+}
+
+.chart .bar {
+  fill: var(--accent);
+}
+.chart .bar.is-muted {
+  fill: var(--text-muted);
+}
+.chart .bar.is-warn {
+  fill: var(--orange);
+}
+
+.chart .target-line {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+/* Legends carry the meaning of every colour used above them. A dot that
+   encodes whether a suggestion was met is only information if the key is
+   right there — scrolling to find it means nobody reads it. */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 12px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.lg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lg-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.lg-swatch.is-muted {
+  background: var(--text-muted);
+}
+.lg-swatch.is-warn {
+  background: var(--orange);
+}
+.lg-swatch.is-dim {
+  background: var(--text-dim);
+}
+.lg-swatch.is-target {
+  background: none;
+  border-top: 2px dashed var(--text-dim);
+  height: 0;
+  border-radius: 0;
+}
+
+.stat-row {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0 4px;
+}
+
+.stat {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 10px;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.ranked-bars {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.ranked-bars li {
+  display: grid;
+  grid-template-columns: 5.5em 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 0.82rem;
+}
+
+.rb-label {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rb-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.rb-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.rb-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rb-sub {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.sub-head {
+  margin: 18px 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.gap-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.card select {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  min-height: 52px;
+  font-size: 1rem;
+  font-weight: 600;
+}

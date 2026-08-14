@@ -470,6 +470,56 @@ question.
 Suggestions are overridable: a stepper on the session preview that moves in
 the equipment's real increment, and the weight field in run mode.
 
+## Trends
+
+A read layer over `sessionHistory` and `readinessLog` (`analytics.js`, all pure
+functions). Nothing on this screen writes, and nothing changed about how a
+session is logged to build it.
+
+Charts are inline SVG in `Chart.jsx` — a line, a bar and a ranked bar. A
+charting library would have cost more bundle than the app's own source for
+that.
+
+**Sparse renders as sparse, never as hidden.** One logged session is one point
+on a chart. No section gates behind "not enough data", because that would make
+the screen emptiest exactly when you are most curious whether the thing works.
+
+Calculation choices worth knowing:
+
+- **Consistency is credit-based**, not pass/fail: `sum(min(done, target)) /
+  sum(target)`. Three of four sessions scores 75%, where a "weeks fully met"
+  measure scores 0 and tells you nothing about a near miss. The current week is
+  excluded until it is over.
+- **The in-progress week neither breaks nor pads a streak.** A week you are
+  three days into has not failed, and has not succeeded either.
+- **Estimated 1RM is Epley, capped at 12 reps.** Above that it runs away — a
+  20-rep set would "estimate" a 1RM nobody could lift — so those sessions report
+  no estimate rather than a wrong one. Volume and top-set weight are always
+  available as alternates.
+- **Locations are never normalised against each other.** Home caps dumbbells at
+  52.5 and the barbell at 80, so a lower Home point is usually the equipment,
+  not you. Bridging the two would be inventing a number; the chart labels which
+  is which and leaves the reading to you.
+- **Muscle volume splits across an exercise's primary muscles** rather than
+  counting in full against each, so the totals add up to what was actually
+  lifted. Unloaded work (planks, carries) carries no tonnage, so working sets
+  are shown alongside — a volume-only view claims your core is neglected while
+  you plank three times a week.
+- **Readiness vs training is reported as plain averages** per session type, not
+  a correlation coefficient. With a few dozen points an *r* reads far more
+  confident than it has earned.
+- **Weeks are bucketed with `Math.round`, not `Math.floor`.** A week spanning a
+  spring-forward transition is 167 hours, so flooring the division files a
+  session a week early every March.
+
+**Cardio is mostly unbuildable from what is logged**, and the screen says so
+rather than rendering an empty chart that looks like you never ran. A cardio
+session stores `{ type, location, date, band, targetMinutes }` — there is no
+cardio generator yet, so nothing ever asked for a distance, a structure type or
+a modality and nothing recorded one. `CARDIO_GAPS` declares the missing fields,
+the UI lists them, and `cardioFieldsPresent()` stops listing any that start
+appearing in the data.
+
 ## PWA install
 
 The manifest and icons (`public/icons/`) are wired up via
