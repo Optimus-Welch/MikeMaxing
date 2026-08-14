@@ -85,6 +85,9 @@ export default function Today() {
   // object iteration order. Kept separate from generation so a swap never
   // re-runs the generator, and regenerating starts clean.
   const [swaps, setSwaps] = useState({});
+  // Weight the user set themselves in the preview, overriding the suggestion.
+  // Cleared by regenerating, same as swaps.
+  const [weightOverrides, setWeightOverrides] = useState({});
   const [swapTarget, setSwapTarget] = useState(null);
 
   // Garmin's number, taken as given — no weighting, no combining.
@@ -146,22 +149,63 @@ export default function Today() {
     seed,
   ]);
 
-  // Apply any preview swaps on top of the generated session.
+  // Apply any preview swaps on top of the generated session, then any weight
+  // overrides on top of that. Overrides are keyed by exerciseId rather than
+  // slot index because a swap changes what lives in a slot — a weight you set
+  // for a Goblet Squat must not silently transfer to whatever replaces it.
   const plannedSession = useMemo(() => {
     if (!liftSession) return null;
     let out = liftSession;
     for (const [slot, chosen] of Object.entries(swaps)) {
       const idx = Number(slot);
       if (!out.exercises[idx]) continue;
-      out = swapExerciseTo({ session: out, index: idx, exercise: chosen, seed });
+      out = swapExerciseTo({
+        session: out,
+        index: idx,
+        exercise: chosen,
+        seed,
+        sessionHistory,
+      });
+    }
+
+    if (Object.keys(weightOverrides).length) {
+      out = {
+        ...out,
+        exercises: out.exercises.map((ex) => {
+          const override = weightOverrides[ex.exerciseId];
+          if (override == null || !ex.suggestion) return ex;
+          return {
+            ...ex,
+            suggestion: { ...ex.suggestion, weight: override, note: 'Set by you for today.' },
+          };
+        }),
+      };
     }
     return out;
-  }, [liftSession, swaps, seed]);
+  }, [liftSession, swaps, seed, sessionHistory, weightOverrides]);
 
   const { blocks, estimatedMinutes } = useMemo(
     () => (plannedSession ? buildBlocks(plannedSession) : { blocks: [], estimatedMinutes: 0 }),
     [plannedSession],
   );
+
+  // Nudge one exercise's suggested weight by a single real increment of the
+  // equipment at this location, never past its ceiling. `direction` is +1/-1
+  // rather than a weight so the caller never has to know the step size.
+  function adjustWeight(item, direction) {
+    const current = item.suggestion?.weight;
+    if (current == null) return;
+
+    const step = item.suggestion.equipment?.step ?? 5;
+    const cap = item.suggestion.equipment?.cap ?? null;
+
+    let next = current + direction * step;
+    if (next < 0) next = 0;
+    if (cap != null && next > cap) next = cap;
+    if (next === current) return;
+
+    setWeightOverrides((prev) => ({ ...prev, [item.exerciseId]: next }));
+  }
 
   function startWorkout() {
     // Prime the audio context inside this tap. iOS Safari — including the
@@ -362,7 +406,12 @@ export default function Today() {
             </p>
           )}
 
-          <BlockList blocks={blocks} onSwap={(item) => setSwapTarget(item)} />
+          <BlockList
+            blocks={blocks}
+            location={selectedLocation}
+            onSwap={(item) => setSwapTarget(item)}
+            onAdjustWeight={adjustWeight}
+          />
 
           <button
             type="button"
@@ -370,6 +419,7 @@ export default function Today() {
             style={{ width: '100%', marginBottom: 14 }}
             onClick={() => {
               setSwaps({});
+              setWeightOverrides({});
               setSeed(Math.floor(Math.random() * 1e9));
             }}
           >

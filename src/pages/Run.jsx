@@ -111,6 +111,14 @@ export default function Run() {
           variationGroup: ex.variationGroup,
           emphasis: ex.emphasis,
           prescription: ex.prescription,
+          // What was ASKED for, recorded structurally alongside what was done.
+          // Without this, "did you complete it?" is unanswerable later: the
+          // prescription was only ever stored as display text like "4 × 10",
+          // and progression cannot judge a session against a string.
+          targetSets: ex.sets ?? null,
+          targetReps: ex.reps ?? null,
+          targetSeconds: ex.seconds ?? null,
+          suggestedWeight: ex.suggestion?.weight ?? null,
           sets: performed
             .filter((r) => r.exerciseId === ex.exerciseId)
             .map((r) => ({ reps: r.reps, weight: r.weight, rpe: r.rpe ?? null })),
@@ -348,14 +356,19 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
     [item.exerciseId],
   );
 
-  // Reset the inputs whenever the step changes, pre-filling weight from last
-  // time and reps from the prescription.
+  // Reset the inputs whenever the step changes. Weight pre-fills from the
+  // progression suggestion when there is one, falling back to last time's
+  // weight — which is what the suggestion is derived from anyway, so the
+  // fallback only shows up for movements progression deliberately leaves
+  // alone. Typing over either is the override.
+  const suggested = item.suggestion ?? null;
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
   useEffect(() => {
     setReps(item.reps != null ? String(item.reps) : '');
-    setWeight(last?.weight != null ? String(last.weight) : '');
-  }, [step.key, item.reps, last?.weight]);
+    const prefill = suggested?.weight ?? last?.weight ?? null;
+    setWeight(prefill != null ? String(prefill) : '');
+  }, [step.key, item.reps, suggested?.weight, last?.weight]);
 
   if (isPrep) {
     return (
@@ -430,6 +443,14 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
           </span>
           {last?.date && <span className="p-date">{last.date}</span>}
         </div>
+
+        {/* Why that weight is in the box. A prefilled number with no reason is
+            one you either follow without thinking or ignore entirely. */}
+        {suggested?.note && (
+          <p className={`progression-note${suggested.verdict === 'deload' ? ' is-back-off' : ''}`}>
+            {suggested.note}
+          </p>
+        )}
 
         {item.detail && <p className="run-note">{item.detail}</p>}
         {/* Load notes explain how to work around a weight ceiling, so they are
