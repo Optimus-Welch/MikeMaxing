@@ -306,7 +306,7 @@ export default function Today() {
         <section className="card">
           <h2>No session yet</h2>
           <p className="hint">
-            Enter today's Garmin Training Readiness score and Autopilot will build the session.
+            Enter today's Garmin Training Readiness score and MikeMaxing will build the session.
           </p>
         </section>
       )}
