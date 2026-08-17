@@ -30,8 +30,8 @@ export default defineConfig(({ command }) => ({
       registerType: 'autoUpdate',
       includeAssets: ['icons/apple-touch-icon.png'],
       manifest: {
-        name: 'Autopilot',
-        short_name: 'Autopilot',
+        name: 'MikeMaxing',
+        short_name: 'MikeMaxing',
         description: 'Personal workout planner — readiness-based session recommendations.',
         start_url: '.',
         display: 'standalone',

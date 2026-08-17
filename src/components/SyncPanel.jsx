@@ -125,7 +125,7 @@ export default function SyncPanel() {
                 You are in the installed app, which has its own separate storage from Safari.
                 Opening the link in Safari or in Mail&apos;s built-in browser signs <em>that</em>{' '}
                 browser in and leaves this app signed out. Long-press the link and choose to open
-                it in Autopilot, or paste it into this app.
+                it in MikeMaxing, or paste it into this app.
               </p>
             )}
             <button type="button" className="btn-secondary" onClick={() => setSent(false)}>
