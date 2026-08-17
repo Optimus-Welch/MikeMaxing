@@ -4,6 +4,7 @@ import { startSync } from './lib/syncStore.js';
 import NavBar from './components/NavBar.jsx';
 import Today from './pages/Today.jsx';
 import Settings from './pages/Settings.jsx';
+import Analytics from './pages/Analytics.jsx';
 import Run from './pages/Run.jsx';
 import Finish from './pages/Finish.jsx';
 
@@ -41,6 +42,7 @@ function Shell() {
       <main className="app-content">
         <Routes>
           <Route path="/" element={<Today />} />
+          <Route path="/trends" element={<Analytics />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/finish" element={<Finish />} />
         </Routes>

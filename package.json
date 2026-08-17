@@ -15,8 +15,9 @@
     "check:qol": "node scripts/check-qol.mjs",
     "check:weekly": "node scripts/check-weekly.mjs",
     "check:sync": "node scripts/check-sync.mjs",
-    "check": "npm run lint && npm run check:library && npm run check:generator && npm run check:blocks && npm run check:migration && npm run check:qol && npm run check:weekly && npm run check:progression && npm run check:sync",
-    "check:progression": "node scripts/check-progression.mjs"
+    "check": "npm run lint && npm run check:library && npm run check:generator && npm run check:blocks && npm run check:migration && npm run check:qol && npm run check:weekly && npm run check:progression && npm run check:analytics && npm run check:sync",
+    "check:progression": "node scripts/check-progression.mjs",
+    "check:analytics": "node scripts/check-analytics.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

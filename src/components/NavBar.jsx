@@ -9,6 +9,12 @@ export default function NavBar() {
         </span>
         Today
       </NavLink>
+      <NavLink to="/trends" className={({ isActive }) => (isActive ? 'active' : '')}>
+        <span className="nav-icon" aria-hidden="true">
+          📈
+        </span>
+        Trends
+      </NavLink>
       <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
         <span className="nav-icon" aria-hidden="true">
           ⚙️
