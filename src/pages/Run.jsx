@@ -234,7 +234,11 @@ export default function Run() {
             {step.blockSubtitle ? ` — ${step.blockSubtitle}` : ''}
           </div>
           <div className="hint" style={{ marginTop: 2 }}>
-            Round {step.round} of {step.totalRounds} · {doneCount}/{workSteps.length} sets done
+            {step.kind === 'warmup' || (isRest && step.warmupIndex != null)
+              ? `Warm-up ${step.warmupIndex} of ${step.warmupCount}`
+              : `Round ${step.round} of ${step.totalRounds}`}
+            {' · '}
+            {doneCount}/{workSteps.length} sets done
           </div>
         </div>
         <div className="run-top-actions">
@@ -349,6 +353,7 @@ function RestView({ endsAt, seconds, next, soundEnabled, onSkip, onAdd }) {
 function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
   const item = step.item;
   const isPrep = step.kind === 'prep';
+  const isWarmup = step.kind === 'warmup';
   const isTimed = item.seconds != null;
 
   const last = useMemo(
@@ -369,6 +374,49 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
     const prefill = suggested?.weight ?? last?.weight ?? null;
     setWeight(prefill != null ? String(prefill) : '');
   }, [step.key, item.reps, suggested?.weight, last?.weight]);
+
+  // A ramp set: fixed weight and reps walking up to the working weight. Shown
+  // without inputs on purpose — it is never logged, so there is nothing to
+  // mistake for a working set. "Done" just advances.
+  if (isWarmup) {
+    return (
+      <>
+        <div className="run-body">
+          <div className="run-context-row">
+            <span className="eyebrow warmup-tag">Warm-up — not logged</span>
+            <DemoLink demo={demoFor(item)} />
+          </div>
+          <h1 className="run-exercise-name">{item.name}</h1>
+
+          <div className="run-targets">
+            <div className="target-box">
+              <div className="t-label">Weight (lb)</div>
+              <div className="t-value">{item.weight}</div>
+            </div>
+            <div className="target-box">
+              <div className="t-label">Reps</div>
+              <div className="t-value">{item.reps}</div>
+            </div>
+          </div>
+
+          <p className="run-note">
+            Ramp set {item.setNumber} — about {Math.round(item.fraction * 100)}% of today's{' '}
+            {item.workingWeight} lb working weight. Smooth and crisp, nowhere near failure.
+          </p>
+        </div>
+        <div className="run-actions">
+          <button type="button" className="btn-primary" onClick={() => onDone({})}>
+            Done
+          </button>
+          <div className="run-secondary-actions">
+            <button type="button" className="btn-secondary" onClick={onSkip}>
+              Skip
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (isPrep) {
     return (

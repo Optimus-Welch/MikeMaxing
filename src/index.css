@@ -1323,6 +1323,41 @@ button.sync-banner:active {
   color: var(--text-muted);
 }
 
+/* ---- warm-up ramp ------------------------------------------------------- */
+
+/* Ramp sets sit in the same card as the lift they build to, but must never
+   read as working sets: dimmer text, a tag, and no logging affordances. */
+.warmup-tag {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.block-item.is-warmup .bi-name {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.block-item.is-warmup .bi-detail {
+  color: var(--text-dim);
+}
+
+.block-item.is-warmup .bi-target {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.overlay-row.is-warmup .overlay-name {
+  color: var(--text-dim);
+}
+
 /* ---- analytics --------------------------------------------------------- */
 
 .chart {

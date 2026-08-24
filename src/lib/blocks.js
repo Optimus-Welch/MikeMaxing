@@ -10,6 +10,10 @@
 //
 // A block is a named group performed for N rounds. Within a round you do each
 // item in order; rest is an explicit item with a duration, not an afterthought.
+//
+// Blocks containing heavy compound lifts additionally carry `rampItems`: the
+// warm-up sets walking up to the working weight (see warmupRamp.js). They are
+// performed once, before round 1, and are never logged as working sets.
 
 import {
   GENERAL_WARMUP,
@@ -17,6 +21,7 @@ import {
   COOLDOWN_DRILLS,
   PATTERN_COOLDOWNS,
 } from './warmups.js';
+import { warmupRampFor, WARMUP_REST_SECONDS } from './warmupRamp.js';
 
 // Rest between working sets, by how heavy the slot is. Orange (recovery-ish)
 // days get slightly shorter rests since the loads are lighter anyway.
@@ -66,6 +71,7 @@ export function buildBlocks(session) {
       name: 'PRIMARY STRENGTH',
       subtitle: PRIMARY_LABELS[i] ?? `LIFT ${i + 1}`,
       rounds: ex.sets ?? 3,
+      rampItems: warmupRampFor(ex, session.location),
       items: [
         { kind: 'exercise', ...ex },
         { kind: 'rest', seconds: restSeconds('primary', band) },
@@ -87,6 +93,9 @@ export function buildBlocks(session) {
       name: 'ACCESSORY WORK',
       subtitle: ACCESSORY_LABELS[i] ?? `BLOCK ${i + 1}`,
       rounds,
+      // A heavy compound can land in a secondary slot (a barbell row, a hip
+      // thrust) — it still gets its walk-up, done before the circuit starts.
+      rampItems: group.flatMap((ex) => warmupRampFor(ex, session.location)),
       items: [
         ...group.map((ex) => ({ kind: 'exercise', ...ex })),
         { kind: 'rest', seconds: restSeconds(emphasis, band) },
@@ -119,6 +128,8 @@ export function buildBlocks(session) {
 function estimateMinutes(blocks) {
   let seconds = 0;
   for (const block of blocks) {
+    // Ramp sets happen once, before round 1, each followed by a short rest.
+    seconds += (block.rampItems?.length ?? 0) * (30 + WARMUP_REST_SECONDS);
     for (let r = 0; r < block.rounds; r++) {
       for (const item of block.items) {
         if (item.kind === 'rest') seconds += item.seconds;
@@ -142,6 +153,34 @@ export function buildRunSteps(blocks) {
   const steps = [];
 
   blocks.forEach((block, blockIndex) => {
+    // Warm-up ramp first, once, each set followed by a short rest — including
+    // after the last one, so you catch your breath before the first real set.
+    const ramp = block.rampItems ?? [];
+    ramp.forEach((item, wi) => {
+      const shared = {
+        blockId: block.id,
+        blockName: block.name,
+        blockSubtitle: block.subtitle,
+        blockIndex,
+        round: 1,
+        totalRounds: block.rounds,
+        warmupIndex: wi + 1,
+        warmupCount: ramp.length,
+      };
+      steps.push({
+        key: `${block.id}-warmup${wi + 1}-${item.exerciseId}`,
+        kind: 'warmup',
+        ...shared,
+        item,
+      });
+      steps.push({
+        key: `${block.id}-warmup${wi + 1}-${item.exerciseId}-rest`,
+        kind: 'rest',
+        ...shared,
+        item: { kind: 'rest', seconds: WARMUP_REST_SECONDS },
+      });
+    });
+
     for (let round = 1; round <= block.rounds; round++) {
       const isLastRound = round === block.rounds;
 

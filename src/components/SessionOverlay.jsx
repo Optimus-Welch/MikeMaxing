@@ -71,10 +71,20 @@ export default function SessionOverlay({ steps, results, currentIndex, restRemai
             const byExercise = [];
             for (const { step, index } of block.entries) {
               if (step.kind === 'rest') continue;
-              const key = step.item.exerciseId ?? step.item.id;
+              // Warm-up ramp sets get their own row — merging their ticks into
+              // the working-set row would misstate how many real sets remain.
+              const key =
+                step.kind === 'warmup'
+                  ? `warmup-${step.item.exerciseId}`
+                  : (step.item.exerciseId ?? step.item.id);
               let row = byExercise.find((r) => r.key === key);
               if (!row) {
-                row = { key, name: step.item.name, kind: step.kind, rounds: [] };
+                row = {
+                  key,
+                  name: step.kind === 'warmup' ? `${step.item.name} — warm-up` : step.item.name,
+                  kind: step.kind,
+                  rounds: [],
+                };
                 byExercise.push(row);
               }
               row.rounds.push({
@@ -86,7 +96,12 @@ export default function SessionOverlay({ steps, results, currentIndex, restRemai
               });
             }
 
-            const blockDone = byExercise.every((r) => r.rounds.every((x) => x.done || x.skipped));
+            // Only working sets decide whether a block reads as done — warm-up
+            // and prep steps are never recorded, so counting them would leave
+            // a block "in progress" forever.
+            const workRows = byExercise.filter((r) => r.kind === 'exercise');
+            const blockDone =
+              workRows.length > 0 && workRows.every((r) => r.rounds.every((x) => x.done || x.skipped));
 
             return (
               <section className={`overlay-block${blockDone ? ' is-done' : ''}`} key={block.id}>
@@ -100,7 +115,9 @@ export default function SessionOverlay({ steps, results, currentIndex, restRemai
 
                 {byExercise.map((row) => (
                   <div
-                    className={`overlay-row${row.rounds.some((r) => r.current) ? ' is-current' : ''}`}
+                    className={`overlay-row${row.rounds.some((r) => r.current) ? ' is-current' : ''}${
+                      row.kind === 'warmup' ? ' is-warmup' : ''
+                    }`}
                     key={row.key}
                   >
                     <span className="overlay-name">{row.name}</span>
