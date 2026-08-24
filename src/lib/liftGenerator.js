@@ -525,6 +525,10 @@ export function makeSessionExercise({
     patternLabel: PATTERN_LABELS[exercise.movementPattern],
     variationGroup: exercise.variationGroup,
     emphasis,
+    // The movement's own weight class, distinct from the slot's emphasis.
+    // Warm-up ramping keys off it: a primary-tier dumbbell lift ramps even
+    // when it lands in a secondary slot.
+    tier: exercise.tier ?? null,
     primaryMuscles: exercise.primaryMuscles,
     loadNotes: exercise.loadNotes ?? null,
     capStrategy: exercise.capStrategy ?? null,

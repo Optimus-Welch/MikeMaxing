@@ -18,6 +18,7 @@ function formatRest(seconds) {
 
 function itemTarget(item) {
   if (item.kind === 'rest') return formatRest(item.seconds);
+  if (item.kind === 'warmup') return `${item.weight} lb × ${item.reps}`;
   if (item.kind === 'prep') {
     if (item.seconds) return `${item.seconds}s`;
     return item.reps ? `${item.reps} reps` : '';
@@ -85,6 +86,31 @@ export default function BlockList({ blocks, onSwap, onAdjustWeight, location }) 
           </div>
 
           <ul className="block-items">
+            {/* Warm-up ramp: done once before round 1, visually set apart so a
+                ramp set never reads as (or gets logged as) a working set. */}
+            {(block.rampItems ?? []).map((item) => (
+              <li
+                className="block-item is-warmup"
+                key={`${block.id}-warmup-${item.exerciseId}-${item.setNumber}`}
+              >
+                <div className="bi-main">
+                  <div className="bi-name">
+                    <span className="warmup-tag">Warm-up</span>
+                    {/* In a circuit the ramp needs to say WHICH lift it warms
+                        up; a single-lift block already says it in the title. */}
+                    {block.items.filter((it) => it.kind === 'exercise').length > 1
+                      ? item.name
+                      : `Set ${item.setNumber}`}
+                  </div>
+                  <div className="bi-detail">
+                    ≈{Math.round(item.fraction * 100)}% of the working weight — not logged
+                  </div>
+                </div>
+                <div className="bi-side">
+                  <span className="bi-target">{itemTarget(item)}</span>
+                </div>
+              </li>
+            ))}
             {block.items.map((item, i) => (
               <li
                 className={`block-item${item.kind === 'rest' ? ' is-rest' : ''}`}
