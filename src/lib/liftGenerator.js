@@ -86,34 +86,38 @@ export function nextTemplate(sessionHistory) {
   return TEMPLATES.find((t) => t.id !== lastLift.templateId) ?? TEMPLATES[0];
 }
 
-// -- readiness -> INTENSITY ------------------------------------------------
-// Green trades reps for load, Yellow is the honest middle, Orange keeps the
-// session but backs off. Red never reaches here (Today recommends Rest).
+// -- readiness -> VOLUME ---------------------------------------------------
+// Every band trains the same moderate 10–15 rep range at the same moderate
+// effort. Readiness buys VOLUME — sets here, exercise count via
+// settings.durationTargets — never heavier loads or lower rep ranges.
+// Strength is built by accumulating quality moderate work over months, not by
+// intensity spikes: nothing in this app ever programs toward a 1-rep max or a
+// grind to failure. Red never reaches here (Today recommends Rest).
 //
-// This is the intensity axis only. How LONG the session is — how many
-// exercises it contains — is the duration axis, configured per band in
-// settings.durationTargets and passed in as `exerciseCount`.
+// How LONG the session is — how many exercises it contains — is the duration
+// axis, configured per band in settings.durationTargets and passed in as
+// `exerciseCount`.
 
 export const BAND_PRESCRIPTION = {
   Green: {
-    label: 'Heavy — low reps, high intensity',
-    repRange: [4, 6],
-    accessoryReps: [8, 10],
+    label: 'Extended — moderate effort, more volume',
+    repRange: [10, 15],
+    accessoryReps: [12, 15],
     sets: { primary: 5, secondary: 4, accessory: 3 },
-    rpe: '8–9',
-    note: 'Readiness is Green: push the load, keep reps low and crisp.',
+    rpe: '6–7',
+    note: 'Readiness is Green: add sets, not weight. Same moderate effort, more quality volume.',
   },
   Yellow: {
-    label: 'Standard — moderate reps',
-    repRange: [8, 12],
+    label: 'Standard — moderate effort',
+    repRange: [10, 15],
     accessoryReps: [12, 15],
     sets: { primary: 4, secondary: 3, accessory: 3 },
-    rpe: '7–8',
-    note: 'Readiness is Yellow: standard working sets, leave a rep or two in reserve.',
+    rpe: '6–7',
+    note: 'Readiness is Yellow: standard working sets, always 2–3 reps left in the tank.',
   },
   Orange: {
     label: 'Reduced volume — movement quality',
-    repRange: [10, 12],
+    repRange: [10, 15],
     accessoryReps: [12, 15],
     sets: { primary: 2, secondary: 2, accessory: 2 },
     rpe: '5–6',
@@ -159,7 +163,7 @@ export const SCHEMES = [
     tiers: ['accessory'],
     describe: ({ sets, reps, rpe }) => ({
       prescription: `${sets} × ${reps} + drop`,
-      detail: `On the last set only, cut the weight ~30% and go again to near failure. RPE ${rpe} on the working sets.`,
+      detail: `On the last set only, cut the weight ~30% and go again, stopping a couple of reps short of failure. RPE ${rpe} on the working sets.`,
     }),
   },
   {
@@ -209,7 +213,7 @@ const TIER_RANK = { primary: 3, secondary: 2, accessory: 1 };
 
 // Minimum tier we would *like* in a slot of each emphasis. A primary slot is
 // the day's main lift, so an isolation movement (a fly, a lateral raise) has
-// no business there — without this a 5x5 "heavy" slot can land on a cable fly.
+// no business there — without this the day's main slot can land on a cable fly.
 const TIER_FLOOR = { primary: 3, secondary: 2, accessory: 1 };
 
 // Narrow to the subset if it is non-empty, otherwise keep what we had.
@@ -288,7 +292,12 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride }) {
   const isTimeBased = exercise.metric === 'time';
   const [lo, hi] =
     emphasis === 'accessory' || exercise.tier === 'accessory' ? plan.accessoryReps : plan.repRange;
-  const reps = lo + Math.floor(rng() * (hi - lo + 1));
+  // First prescriptions start in the BOTTOM half of the range. Progression is
+  // reps-first (see progression.js): a lift climbs from here to the top of the
+  // range before any weight is added, so the opening target must leave that
+  // runway rather than starting a movement at 15 with nowhere to go but load.
+  const startHi = Math.min(hi, lo + Math.floor((hi - lo) / 2));
+  const reps = lo + Math.floor(rng() * (startHi - lo + 1));
 
   // Time-based work (planks, carries) always uses straight sets — EMOM/drop
   // sets on a carry is nonsense.
@@ -306,6 +315,7 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride }) {
       reps: null,
       seconds,
       rpe: plan.rpe,
+      repFloor: null,
       repCeiling: null,
     };
   }
@@ -339,8 +349,11 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride }) {
     reps,
     seconds: null,
     rpe: plan.rpe,
-    // The top of today's band range. Progression needs it to know when reps
-    // have nowhere left to go and the movement itself has to get harder.
+    // The bounds of today's working range. Progression climbs reps from the
+    // floor to the ceiling before it touches the weight, and needs both: the
+    // ceiling to know when reps have nowhere left to go, the floor to know
+    // where they restart after a weight increase.
+    repFloor: lo,
     repCeiling: hi,
   };
 }

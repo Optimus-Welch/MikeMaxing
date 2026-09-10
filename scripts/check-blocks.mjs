@@ -115,11 +115,13 @@ console.log('\n=== warm-up ramp ===');
   });
   const inTenths = (w, step) => (w * 10) % (step * 10) === 0;
 
-  // A heavy barbell lift gets the full three-set walk-up: ascending, loadable,
-  // and every set strictly lighter than the working weight.
+  // A barbell compound gets the full two-set walk-up: ascending, loadable,
+  // and every set strictly lighter than the working weight. Two sets, not
+  // three — working sets are moderate 10–15 rep work, not near-max singles,
+  // so the ramp stays short.
   const ramp = warmupRampFor(entry(), 'Work');
   console.log(`  190 lb barbell @ Work: ${ramp.map((s) => `${s.weight}×${s.reps}`).join(', ')}`);
-  assert(ramp.length === 3, `expected 3 ramp sets, got ${ramp.length}`);
+  assert(ramp.length === 2, `expected 2 ramp sets, got ${ramp.length}`);
   ramp.forEach((s, i) => {
     assert(s.weight < 190, `ramp set ${i + 1} must be lighter than the working weight`);
     assert(inTenths(s.weight, 5), `ramp set ${i + 1} (${s.weight}) is not loadable in 5 lb steps`);
@@ -131,11 +133,14 @@ console.log('\n=== warm-up ramp ===');
   // that collapse into each other are dropped rather than duplicated.
   const light = warmupRampFor(entry({ suggestion: { ...entry().suggestion, weight: 65 } }), 'Work');
   console.log(`  65 lb barbell @ Work: ${light.map((s) => `${s.weight}×${s.reps}`).join(', ')}`);
-  assert(light.length > 0 && light.length < 3, 'a light barbell lift should get a shortened ramp');
+  assert(light.length > 0, 'a 65 lb barbell lift should still get a ramp');
   assert(
     light.every((s) => s.weight >= 45 && s.weight < 65),
     'Work barbell ramp sets must sit between the empty bar and the working weight',
   );
+  const collapsed = warmupRampFor(entry({ suggestion: { ...entry().suggestion, weight: 60 } }), 'Work');
+  console.log(`  60 lb barbell @ Work: ${collapsed.map((s) => `${s.weight}×${s.reps}`).join(', ')}`);
+  assert(collapsed.length === 1, `both fractions collapse onto the bar: expected 1 set, got ${collapsed.length}`);
 
   // Below the minimum worthwhile target there is no ramp at all.
   assert(
@@ -160,10 +165,10 @@ console.log('\n=== warm-up ramp ===');
     'no suggested weight means no ramp',
   );
 
-  // Secondary-slot compounds get the shortened two-fraction ramp.
+  // Secondary-slot compounds get just the single heavier ramp set.
   const secondary = warmupRampFor(entry({ emphasis: 'secondary' }), 'Work');
-  assert(secondary.length === 2, `secondary emphasis should ramp in 2 sets, got ${secondary.length}`);
-  assert(secondary[0].fraction === 0.5, 'secondary ramp should start at 50%');
+  assert(secondary.length === 1, `secondary emphasis should ramp in 1 set, got ${secondary.length}`);
+  assert(secondary[0].fraction === 0.75, 'secondary ramp should be the ~75% set');
 
   // Home dumbbell ramps land on the 2.5 lb increments of the adjustables.
   const home = warmupRampFor(db('primary', 52.5, 2.5), 'Home');
@@ -209,14 +214,14 @@ console.log('\n=== warm-up ramp ===');
   };
   const { blocks } = buildBlocks(session);
   const primary = blocks.find((b) => b.id === 'primary-0');
-  assert(primary.rampItems.length === 3, 'primary block should carry its 3 ramp sets');
+  assert(primary.rampItems.length === 2, 'primary block should carry its 2 ramp sets');
   const circuit = blocks.find((b) => b.id === 'accessory-0');
   assert((circuit.rampItems ?? []).length === 0, 'the goblet squat circuit must not ramp');
 
   const steps = buildRunSteps(blocks);
   assert(new Set(steps.map((s) => s.key)).size === steps.length, 'ramp step keys must be unique');
   const warmupSteps = steps.filter((s) => s.kind === 'warmup');
-  assert(warmupSteps.length === 3, `expected 3 warm-up steps, got ${warmupSteps.length}`);
+  assert(warmupSteps.length === 2, `expected 2 warm-up steps, got ${warmupSteps.length}`);
   const firstWork = steps.findIndex((s) => s.kind === 'exercise' && s.blockId === 'primary-0');
   for (const s of warmupSteps) {
     assert(steps.indexOf(s) < firstWork, 'every ramp set must precede the first working set');

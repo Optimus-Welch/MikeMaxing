@@ -248,7 +248,7 @@ The engine decides *what* to train; this layer walks you through it.
 **Blocks.** `buildBlocks()` groups the generated exercises into named blocks
 with a round count — `WARM UP`, `[4x] PRIMARY STRENGTH — MAIN LIFT`,
 `[3x] ACCESSORY WORK — BLOCK A`, `COOL DOWN`. Rest is an explicit item with a
-duration (longer after heavy primary work, shorter on Orange days), not
+duration (longer after primary work, shorter on Orange days), not
 something implied between lines. Warm-up and cool-down drills are drawn from
 the movement patterns the session actually trains.
 
@@ -357,8 +357,12 @@ The one score drives two independent axes:
 
 | | set by | what it controls |
 |---|---|---|
-| **Intensity** | the band, via `BAND_PRESCRIPTION` | reps, RPE, sets per exercise |
+| **Volume** | the band, via `BAND_PRESCRIPTION` | sets per exercise |
 | **Duration** | `settings.durationTargets[band]` | exercises in a lift, minutes of cardio |
+
+Neither axis is intensity. Every band trains the same moderate 10–15 rep
+range at the same moderate effort (RPE ~6–7, 2–3 reps in reserve) — a high
+readiness score buys *more work*, never heavier loads or lower rep ranges.
 
 Defaults run Green 6 exercises / 45 min cardio down to Red 3 / 15, and every
 number is editable in Settings. Lift exercises are capped at
@@ -407,10 +411,12 @@ always yields the same session and "Regenerate" is simply a new seed.
      exercises flagged `capFriendly`
    - **freshness** — nothing whose `variationGroup` appeared in the last
      `settings.freshnessWindow` lift sessions
-3. **Prescription.** The readiness band sets volume and intensity (Green =
-   low reps / high intensity, Yellow = standard, Orange = reduced volume,
-   Red = recovery instead of a lift), and a set/rep scheme is drawn from
-   straight sets, tempo, supersets, drop sets and EMOM.
+3. **Prescription.** Working sets are always moderate: 10–15 reps at RPE
+   ~6–7, for every band. The readiness band sets *volume* (Green = more sets
+   and exercises, Yellow = standard, Orange = reduced, Red = recovery instead
+   of a lift), and a set/rep scheme is drawn from straight sets, tempo,
+   supersets, drop sets and EMOM. Nothing is ever programmed toward a 1-rep
+   max or a grind to failure.
 
 **Cap-awareness lives in the data, not the UI.** Each exercise carries
 `capFriendly` and a `capStrategy` (`unilateral` / `tempo` / `highRep` /
@@ -425,9 +431,17 @@ record that the set happened.
 
 ### Progressive overload
 
-`progression.js` decides what to load, from what you actually logged. Three
-steps kept separate because they fail differently: **assess** the last
-session, **adjust** the weight, **explain** why in one line.
+`progression.js` decides what to prescribe, from what you actually logged.
+Three steps kept separate because they fail differently: **assess** the last
+session, **adjust** the prescription, **explain** why in one line.
+
+**Reps first, weight second.** Strength is built by accumulating moderate
+work, not by intensity spikes. A clean session adds *a rep* inside the 10–15
+working range; the weight moves only after the top of the range has been held
+across consecutive sessions (`topRangeSessionsForWeight`, default 2) — and
+then by exactly one equipment increment, with reps dropping back to the
+bottom of the range to rebuild. Over months that still compounds into real
+load progress; it just never routes through a heavy single or a grind.
 
 **It reads history per location.** Home caps dumbbells at 52.5 and the barbell
 at 80; Work has neither. A Home session is not evidence about what you can
@@ -440,7 +454,7 @@ prescribed:
 
 | Last session | Verdict |
 |---|---|
-| every set met its prescribed reps | **progress** — one equipment increment up |
+| every set met its prescribed reps | **progress** — a rep up (or, at the held top of the range, one increment) |
 | short somewhere, but ≥75% of prescribed volume | **hold** |
 | below 75% of prescribed volume | **back off** 10% |
 | last set below 60% of the first (a fade) | **back off** 10% |
@@ -455,10 +469,12 @@ weights are snapped to them and clamped to the ceiling. At the Home cap with a
 progress verdict, reps move instead of load; at the cap *and* the top of the
 rep range, it says to swap to a harder variation rather than pretending.
 
-**Rep-target changes adjust the load** at 2.5% per rep, clamped to ±15%,
-because readiness moves the rep range between sessions and a weight programmed
-for 10 is not the weight for 5. Compared against last session's *target*, not
-what was achieved — using achieved reps charges for the same miss twice.
+**Out-of-range history settles into the range** at 2.5% per rep, clamped to
+±15% — a 5×5 weight logged under an older heavy scheme is pulled into the
+10–15 range with the load converted down, so the first session in the new
+range stays moderate instead of becoming a grind. Compared against last
+session's *target*, not what was achieved — using achieved reps charges for
+the same miss twice.
 
 **No invented starting weights.** With no history for a movement it seeds from
 a related lift you have logged (90% within the same `variationGroup`, 80%

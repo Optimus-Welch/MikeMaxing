@@ -2,9 +2,9 @@
 //
 // The generator prescribes ONE working weight per exercise. Jumping straight
 // to it is fine for a lateral raise; it is not fine for a heavy squat. This
-// module builds the walk-up: a light high-rep set, then increasing fractions
-// of the working weight at falling reps, so the first working set is the
-// first HARD set rather than the first set.
+// module builds the walk-up: increasing fractions of the working weight at
+// falling reps, so the first working set is the first real set rather than
+// the first contact with the load.
 //
 // Same rules as everything else in this codebase: pure functions, decisions
 // made from data the session entry already carries (equipment kind, tier,
@@ -29,12 +29,14 @@
 import { roundToStep } from './progression.js';
 
 // Fractions of the WORKING weight (not a 1RM), reps falling as load climbs.
-// Primary slots get the full three-set walk-up; secondary slots skip the
-// lightest set — their loads are more modest and the session has to fit.
+// Working sets are moderate-effort 10–15 rep work, never near-max, so the
+// walk-up is short: two sets prime the movement without turning the warm-up
+// into a session of its own. Primary slots get both; secondary-slot compounds
+// get just the heavier one — their loads are more modest and the session has
+// to fit.
 export const RAMP_SCHEME = [
-  { fraction: 0.3, reps: 10 },
-  { fraction: 0.5, reps: 6 },
-  { fraction: 0.75, reps: 3 },
+  { fraction: 0.5, reps: 8 },
+  { fraction: 0.75, reps: 5 },
 ];
 const SECONDARY_SCHEME = RAMP_SCHEME.slice(1);
 
