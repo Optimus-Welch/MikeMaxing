@@ -1,13 +1,23 @@
 // Progressive overload. Pure functions — no storage, no React — so the whole
 // thing is testable and re-runnable (scripts/check-progression.mjs).
 //
-// The job: given what you actually logged, decide what to put on the bar next
+// The job: given what you actually logged, decide what to prescribe next
 // time. Three steps, kept separate on purpose because they fail differently:
 //
 //   1. assess   was the last session easy, honest, or a grind?
-//   2. adjust   turn that verdict into a weight, respecting the equipment
+//   2. adjust   turn that verdict into a prescription, respecting the range
+//               and the equipment
 //   3. explain  say why, in one line, because a number with no reason is
 //               something you either follow blindly or ignore
+//
+// The philosophy is sustainable strength, not max strength. Progress is
+// REPS-FIRST: a clean session adds a rep inside the working range (10–15),
+// and the weight moves only after the TOP of the range has been held across
+// consecutive sessions — then by exactly one equipment increment, with reps
+// dropping back to the bottom of the range to rebuild. The range is also the
+// effort ceiling: nothing here ever converts progress into low-rep loading or
+// programs toward a 1-rep max, and a lift that runs out of both reps and
+// loadable weight is pointed at a harder variation instead.
 //
 // It only ever suggests. Every number here is overridable in the preview and
 // again in run mode.
@@ -26,6 +36,12 @@ export const PROGRESSION = {
 
   // Back-off size when the last session was a genuine grind.
   deloadPercent: 0.1,
+
+  // Reps-first progression: weight moves only after the top of the working
+  // range has been held for this many CONSECUTIVE sessions of the lift — and
+  // then by a single equipment increment, never a jump. Two sessions rather
+  // than one so a single good day cannot buy a load increase.
+  topRangeSessionsForWeight: 2,
 
   // Only used when RPE was actually logged, which today it never is — see the
   // note on assessLastSession.
@@ -133,6 +149,39 @@ export function lastPerformanceAt(sessionHistory, exerciseId, location) {
     };
   }
   return null;
+}
+
+/**
+ * How many consecutive recent sessions of this exercise, at this location,
+ * finished at or above `ceiling` target reps with every set completed.
+ *
+ * This is the gate on weight increases: reps climb first, and only a streak
+ * of full sessions AT the top of the range earns one equipment increment.
+ * Sessions that simply do not contain the exercise are skipped rather than
+ * breaking the streak — training something else on Tuesday says nothing about
+ * your bench.
+ */
+export function topOfRangeStreak(sessionHistory, exerciseId, location, ceiling) {
+  if (ceiling == null) return 0;
+  let streak = 0;
+  for (const session of sessionHistory ?? []) {
+    if (session.type !== 'Lift') continue;
+    if (location && session.location !== location) continue;
+    if (!Array.isArray(session.exercises)) continue;
+
+    const entry = session.exercises.find((e) => e.exerciseId === exerciseId);
+    if (!entry || !Array.isArray(entry.sets) || entry.sets.length === 0) continue;
+
+    const repped = entry.sets.map((s) => Number(s.reps)).filter((n) => Number.isFinite(n) && n > 0);
+    const met =
+      entry.targetReps != null &&
+      entry.targetReps >= ceiling &&
+      repped.length >= (entry.targetSets ?? repped.length) &&
+      repped.every((r) => r >= entry.targetReps);
+    if (!met) break;
+    streak++;
+  }
+  return streak;
 }
 
 /** Any logged performance in the same movement family, at this location. */
@@ -366,54 +415,99 @@ export function suggestFor({ exercise, location, sessionHistory, target, entry }
       capped: false,
       source: 'history',
       atRepCeiling: false,
-    equipment,
+      equipment,
     };
   }
 
-  // Step 1: the verdict moves the weight.
-  let proposed = lastWeight;
-  if (assessment.verdict === 'progress') {
-    proposed = lastWeight + (limits.step ?? 5);
-  } else if (assessment.verdict === 'deload') {
-    proposed = lastWeight * (1 - PROGRESSION.deloadPercent);
-  }
+  const repFloor = target?.repFloor ?? targetReps;
+  const ceiling = repCeiling ?? targetReps;
 
-  // Step 2: today's rep target may differ from what that weight was PRESCRIBED
-  // for, because readiness sets the rep range and readiness changes. A weight
-  // programmed for 10 is not the weight for 5.
+  // Step 1: place the lift inside today's working range. Continuity beats the
+  // generator's fresh draw: progression carries on from last session's target
+  // rather than jumping to a random point in the range.
   //
-  // Compared against last session's TARGET, not what was achieved. Achieved
-  // reps already decided the verdict in step 1, and using them here charges
-  // for the same miss twice: a session prescribed 3×10 that produced 7, 6, 5
-  // would take the 10% back-off and then a further 7.5% for "only doing 7
-  // reps", landing 18% down off one bad day. Falls back to achieved reps only
-  // for sessions logged before targets were recorded.
+  // A last target OUTSIDE the range (a 5×5 logged under the old heavy
+  // philosophy, or a differently-ranged scheme) is pulled to the nearest edge
+  // and the rep difference is converted to load, clamped — a weight held for
+  // 5 is not the weight for 10, and carrying it over unchanged would turn a
+  // moderate set into a grind. Compared against last session's TARGET, not
+  // what was achieved: achieved reps already decided the verdict, and using
+  // them here would charge for the same miss twice.
   const lastTarget = performance.targetReps ?? lastReps;
 
+  let proposed = lastWeight;
+  let baseReps = Number.isFinite(lastTarget) ? lastTarget : targetReps;
   let repAdjusted = false;
-  if (Number.isFinite(lastTarget) && targetReps != null && lastTarget !== targetReps) {
-    const raw = 1 + PROGRESSION.percentPerRep * (lastTarget - targetReps);
+  if (
+    Number.isFinite(lastTarget) &&
+    repFloor != null &&
+    ceiling != null &&
+    (lastTarget < repFloor || lastTarget > ceiling)
+  ) {
+    baseReps = Math.min(ceiling, Math.max(repFloor, lastTarget));
+    const raw = 1 + PROGRESSION.percentPerRep * (lastTarget - baseReps);
     const factor = Math.min(1 + PROGRESSION.maxRepAdjust, Math.max(1 - PROGRESSION.maxRepAdjust, raw));
     proposed *= factor;
     repAdjusted = true;
   }
 
+  // Step 2: the verdict moves the prescription — reps first, weight second.
+  //
+  //   progress, below the ceiling   -> same weight, one more rep
+  //   progress, AT the ceiling      -> hold it there until the top of the
+  //                                    range has been held for consecutive
+  //                                    sessions, then ONE equipment step up
+  //                                    and reps back to the floor
+  //   hold                          -> everything stays put
+  //   deload                        -> weight comes down, reps stay
+  //
+  // The range is the effort ceiling: reps never push past its top, and weight
+  // never moves by more than a single increment. A transition session (the
+  // rep-adjust above) just settles into the range without also progressing.
+  let reps = baseReps;
+  let addedWeight = false;
+  let banked = false; // at the top of the range, streak not yet long enough
+  if (assessment.verdict === 'progress' && !repAdjusted && ceiling != null) {
+    if (baseReps < ceiling) {
+      reps = baseReps + 1;
+    } else {
+      const streak = topOfRangeStreak(
+        sessionHistory,
+        entry?.exerciseId ?? exercise?.id,
+        location,
+        ceiling,
+      );
+      if (streak >= PROGRESSION.topRangeSessionsForWeight) {
+        // One increment, measured from the grid: a weight logged elsewhere
+        // (Home's 2.5s at Work's 5s) snaps DOWN first, so rounding can never
+        // stretch "one step" into a bigger jump than the equipment's own.
+        const step = limits.step ?? 5;
+        proposed = snapDownToStep(lastWeight, step) + step;
+        reps = repFloor ?? baseReps;
+        addedWeight = true;
+      } else {
+        banked = true;
+      }
+    }
+  } else if (assessment.verdict === 'deload') {
+    proposed = proposed * (1 - PROGRESSION.deloadPercent);
+  }
+
   const { weight, capped } = fitToEquipment(proposed, limits);
 
-  // Step 3: at the ceiling, load cannot be the answer any more. Push reps
-  // instead, and once those top out too, say the honest thing — the movement
-  // itself has to get harder.
-  // "At the ceiling" is about the LOAD having nowhere to go, judged on the
-  // weight you were already lifting — not on whether the final number happened
-  // to land under the cap. A rep-target adjustment can pull the suggestion
-  // back below the cap on paper while the equipment is still the thing
-  // stopping you, and that case still needs reps or a harder variation.
-  const wantedMore = assessment.verdict === 'progress';
+  // Step 3: the equipment ceiling closes the weight route. Rep progression is
+  // already the default, so the cap only truly bites when the reps have ALSO
+  // topped out — and then the honest answer is a harder variation, never
+  // pushing past the range or grinding the capped weight.
+  // Judged on the weight already being lifted, not on whether the final
+  // number happened to land under the cap on paper.
   const capBinding = limits.cap != null && lastWeight >= limits.cap;
-  const atCeiling = wantedMore && (capped || capBinding);
-  const atRepCeiling = atCeiling && repCeiling != null && targetReps != null && targetReps >= repCeiling;
-
-  const reps = atCeiling && !atRepCeiling && targetReps != null ? targetReps + 1 : targetReps;
+  let atRepCeiling = false;
+  if (addedWeight && (capped || capBinding)) {
+    addedWeight = false;
+    reps = ceiling;
+    atRepCeiling = true;
+  }
 
   return {
     weight,
@@ -424,10 +518,13 @@ export function suggestFor({ exercise, location, sessionHistory, target, entry }
       lastTarget,
       weight,
       reps,
-      targetReps,
-      atCeiling,
+      baseReps,
+      ceiling,
+      addedWeight,
+      banked,
       atRepCeiling,
       repAdjusted,
+      capBinding,
       location,
     }),
     verdict: assessment.verdict,
@@ -445,27 +542,40 @@ function buildNote({
   lastTarget,
   weight,
   reps,
-  targetReps,
-  atCeiling,
+  baseReps,
+  ceiling,
+  addedWeight,
+  banked,
   atRepCeiling,
   repAdjusted,
+  capBinding,
   location,
 }) {
   if (atRepCeiling) {
     return `Capped at ${weight} lb here and at the top of the rep range — swap to a harder variation.`;
   }
-  if (atCeiling) {
-    return `${weight} lb is the ceiling at ${location} — going to ${reps} reps instead.`;
+  if (addedWeight) {
+    return `+${trim(weight - lastWeight)} lb — you held ${ceiling} reps across back-to-back sessions. Reps drop to ${reps} to rebuild.`;
+  }
+  if (banked) {
+    return `Hold ${weight} lb × ${ceiling} once more — hit it again and a small weight step follows. ${assessment.reason}`;
+  }
+  if (reps != null && baseReps != null && reps > baseReps) {
+    // Reps-first progress. At an equipment ceiling this is also the only
+    // route, and saying so stops the flat weight looking like a bug.
+    return capBinding
+      ? `${weight} lb is the ceiling at ${location} — progress is reps now: ${reps}. ${assessment.reason}`
+      : `Same weight, ${reps} reps (up from ${baseReps}). ${assessment.reason}`;
   }
 
   const delta = weight - lastWeight;
 
-  // A jump can look alarming without the reason for it. Going from 3×10 to
-  // 5×5 is most of a "+25 lb" — say that, rather than leaving it looking like
-  // the app decided you got 18% stronger in one session.
+  // A shift can look arbitrary without the reason for it. Settling an old
+  // 5-rep weight into today's 10–15 range is most of the change — say that,
+  // rather than leaving it looking like the app moved the number on a whim.
   const becauseReps =
-    repAdjusted && lastTarget != null && targetReps != null
-      ? ` Today is ${targetReps} reps, not ${lastTarget}.`
+    repAdjusted && lastTarget != null && reps != null
+      ? ` Today is ${reps} reps, not ${lastTarget}.`
       : '';
 
   if (delta > 0) return `+${trim(delta)} lb from last time.${becauseReps} ${assessment.reason}`;
@@ -473,8 +583,8 @@ function buildNote({
 
   // Same weight, but say WHY it is the same — a rep-range change that happens
   // to land back on the old number is not the same as holding steady.
-  if (repAdjusted && targetReps != null && reps === targetReps) {
-    return `Same weight as last time, adjusted for today's ${targetReps}-rep target. ${assessment.reason}`;
+  if (repAdjusted && reps != null) {
+    return `Same weight as last time, adjusted for today's ${reps}-rep target. ${assessment.reason}`;
   }
   return `Same as last time. ${assessment.reason}`;
 }

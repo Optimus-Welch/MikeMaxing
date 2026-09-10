@@ -164,8 +164,9 @@ console.log('\n=== capped out at Home ===');
 {
   const exercise = { id: 'x', equipment: ['dumbbells'] };
   const entry = { exerciseId: 'x', variationGroup: 'g', pattern: 'horizontalPush' };
+  const target = { sets: 3, reps: 10, repFloor: 10, repCeiling: 12 };
 
-  // Already at the 52.5 ceiling and earning a jump: reps move, not load.
+  // Already at the 52.5 ceiling with rep room: reps move, load stays.
   const history = [
     session({
       date: '2026-08-10',
@@ -174,100 +175,121 @@ console.log('\n=== capped out at Home ===');
     }),
   ];
 
-  const s = suggestFor({
-    exercise,
-    location: 'Home',
-    sessionHistory: history,
-    target: { sets: 3, reps: 10, repCeiling: 12 },
-    entry,
-  });
+  const s = suggestFor({ exercise, location: 'Home', sessionHistory: history, target, entry });
   assert(s.weight <= 52.5, `must never suggest above the cap, got ${s.weight}`);
   assert(s.weight === 52.5, `should sit at the cap, got ${s.weight}`);
   assert(s.reps === 11, `should add a rep instead of weight, got ${s.reps}`);
   assert(/ceiling/i.test(s.note), `the note must explain why: ${s.note}`);
   console.log('  at the cap with room to spare, reps move instead of load');
 
-  // At the cap AND at the top of the rep range: the movement has to change.
+  // At the cap AND with the top of the range held long enough to earn a
+  // weight step the equipment cannot give: the movement has to change.
+  const toppedHistory = ['2026-08-10', '2026-08-03'].map((date) =>
+    session({
+      date,
+      location: 'Home',
+      exercises: [logged({ id: 'x', targetSets: 3, targetReps: 12, done: sets([12, 52.5], [12, 52.5], [12, 52.5]) })],
+    }),
+  );
   const topped = suggestFor({
     exercise,
     location: 'Home',
-    sessionHistory: history,
-    target: { sets: 3, reps: 12, repCeiling: 12 },
+    sessionHistory: toppedHistory,
+    target: { sets: 3, reps: 12, repFloor: 10, repCeiling: 12 },
     entry,
   });
   assert(topped.atRepCeiling === true, 'must report having run out of room');
+  assert(topped.weight === 52.5, `must stay at the cap, got ${topped.weight}`);
   assert(/harder variation/i.test(topped.note), `must point at the way out: ${topped.note}`);
   console.log('  at the cap and the rep ceiling, it says to change the movement');
 
-  // The same lift at Work is free to keep loading.
-  const workHistory = [
+  // The same earned step at Work actually happens — one increment, reps back
+  // to the floor of the range.
+  const workHistory = ['2026-08-10', '2026-08-03'].map((date) =>
     session({
-      date: '2026-08-10',
+      date,
       location: 'Work',
-      exercises: [logged({ id: 'x', targetSets: 3, targetReps: 10, done: sets([10, 52.5], [10, 52.5], [10, 52.5]) })],
+      exercises: [logged({ id: 'x', targetSets: 3, targetReps: 12, done: sets([12, 52.5], [12, 52.5], [12, 52.5]) })],
     }),
-  ];
+  );
   const atWork = suggestFor({
     exercise,
     location: 'Work',
     sessionHistory: workHistory,
-    target: { sets: 3, reps: 10, repCeiling: 12 },
+    target: { sets: 3, reps: 12, repFloor: 10, repCeiling: 12 },
     entry,
   });
-  assert(atWork.weight > 52.5, `Work should keep adding load, got ${atWork.weight}`);
-  console.log('  the same lift at Work keeps adding load');
+  // 52.5 came from Home's 2.5 lb grid; on Work's 5 lb grid one step means
+  // snap down to 50, then +5 — rounding must never stretch the increment.
+  assert(atWork.weight === 55, `Work should add at most one 5 lb step, got ${atWork.weight}`);
+  assert(atWork.reps === 10, `and drop reps back to the floor, got ${atWork.reps}`);
+  console.log('  the same lift at Work takes its earned one-step increase');
 }
 
 // --- 5. the direction of travel ------------------------------------------
-console.log('\n=== weight moves the right way ===');
+// Reps-first: a clean session adds a rep, the top of the range has to be
+// HELD across sessions before one small weight step, and nothing ever jumps.
+console.log('\n=== reps first, weight second ===');
 {
   const exercise = { id: 'bb', equipment: ['barbell'] };
   const entry = { exerciseId: 'bb', variationGroup: 'g', pattern: 'squat' };
-  const at = (done, targetReps = 10) => [
+  const target = { sets: 3, reps: 12, repFloor: 10, repCeiling: 15 };
+  const day = (date, done, targetReps) =>
     session({
-      date: '2026-08-10',
+      date,
       location: 'Work',
       exercises: [logged({ id: 'bb', targetSets: 3, targetReps, done })],
-    }),
-  ];
-  const suggest = (history, reps = 10) =>
-    suggestFor({
-      exercise,
-      location: 'Work',
-      sessionHistory: history,
-      target: { sets: 3, reps, repCeiling: 12 },
-      entry,
     });
+  const suggest = (history, t = target) =>
+    suggestFor({ exercise, location: 'Work', sessionHistory: history, target: t, entry });
 
-  const up = suggest(at(sets([10, 135], [10, 135], [10, 135])));
-  assert(up.weight === 140, `a clean session should add one step, got ${up.weight}`);
-  assert(/\+5 lb/.test(up.note), `and say so: ${up.note}`);
+  // Clean session inside the range: same weight, one more rep.
+  const up = suggest([day('2026-08-10', sets([12, 135], [12, 135], [12, 135]), 12)]);
+  assert(up.weight === 135, `a clean session must NOT add weight, got ${up.weight}`);
+  assert(up.reps === 13, `it adds a rep instead, got ${up.reps}`);
+  assert(/13 reps/.test(up.note), `and says so: ${up.note}`);
 
-  const held = suggest(at(sets([10, 135], [10, 135], [9, 135])));
-  assert(held.weight === 135, `a near miss should hold, got ${held.weight}`);
+  // First time at the top of the range: hold and bank it.
+  const banked = suggest([day('2026-08-10', sets([15, 135], [15, 135], [15, 135]), 15)]);
+  assert(banked.weight === 135, `one session at the top must not move the weight, got ${banked.weight}`);
+  assert(banked.reps === 15, `reps stay at the ceiling, got ${banked.reps}`);
+  assert(/once more/i.test(banked.note), `and the note says what is coming: ${banked.note}`);
+
+  // Top of the range held across back-to-back sessions: ONE step, reps reset.
+  const heldTop = [
+    day('2026-08-10', sets([15, 135], [15, 135], [15, 135]), 15),
+    day('2026-08-03', sets([15, 135], [15, 135], [15, 135]), 15),
+  ];
+  const stepped = suggest(heldTop);
+  assert(stepped.weight === 140, `two sessions at the top earn one 5 lb step, got ${stepped.weight}`);
+  assert(stepped.reps === 10, `and reps restart at the floor, got ${stepped.reps}`);
+  assert(/\+5 lb/.test(stepped.note), `and say so: ${stepped.note}`);
+
+  // A longer streak earns exactly the same single step — never a jump.
+  const longer = suggest([...heldTop, day('2026-07-27', sets([15, 135], [15, 135], [15, 135]), 15)]);
+  assert(longer.weight === 140, `a longer streak must still add only one step, got ${longer.weight}`);
+
+  const held = suggest([day('2026-08-10', sets([12, 135], [12, 135], [11, 135]), 12)]);
+  assert(held.weight === 135 && held.reps === 12, `a near miss should hold, got ${held.weight} × ${held.reps}`);
   assert(/same as last time/i.test(held.note), `and say so: ${held.note}`);
 
-  const down = suggest(at(sets([7, 135], [6, 135], [5, 135])));
+  const down = suggest([day('2026-08-10', sets([8, 135], [7, 135], [6, 135]), 12)]);
   assert(down.weight < 135, `a missed session should come down, got ${down.weight}`);
   assert(down.weight === 120, `10% off 135, snapped to 5 lb, got ${down.weight}`);
-  console.log('  +5 clean, hold on a near miss, back off on a miss');
+  console.log('  +1 rep clean, bank the top, one step after holding it, back off on a miss');
 
-  // The rep-target adjustment. Readiness moves the rep range between sessions,
-  // so a weight held for 10 is not the weight for 5.
-  const heavier = suggest(at(sets([10, 135], [10, 135], [10, 135])), 5);
-  assert(heavier.weight > up.weight, `a 5-rep day should ask for more than a 10-rep day`);
-  const lighter = suggest(at(sets([5, 185], [5, 185], [5, 185]), 5), 12);
-  assert(lighter.weight < 185, `a 12-rep day after a 5-rep day should come down`);
+  // Migration from the old heavy philosophy: a 5-rep weight is pulled into
+  // today's 10–15 range with the load converted down, clamped to ±15%.
+  const oldHeavy = suggest([day('2026-08-10', sets([5, 185], [5, 185], [5, 185]), 5)]);
+  assert(oldHeavy.weight === 160, `a 5-rep 185 should settle to ~160 for 10s, got ${oldHeavy.weight}`);
+  assert(oldHeavy.reps === 10, `and enter at the floor of the range, got ${oldHeavy.reps}`);
+  assert(/not 5/.test(oldHeavy.note), `and explain the conversion: ${oldHeavy.note}`);
 
-  // ...but never wildly, off one session. Unclamped, 20 reps -> 3 reps would
-  // scale by 1.425 and ask for 150 lb off a single 100 lb session.
-  const clamped = suggest(at(sets([20, 100], [20, 100], [20, 100]), 20), 3);
-  assert(
-    clamped.weight < 130,
-    `the rep adjustment must stay clamped (unclamped is ~150), got ${clamped.weight}`,
-  );
-  assert(clamped.weight > 100, `but it should still go up, got ${clamped.weight}`);
-  console.log('  rep-target changes adjust the load, clamped to ±15%');
+  // ...and the conversion is clamped, so extreme old data cannot swing it.
+  const clamped = suggest([day('2026-08-10', sets([30, 100], [30, 100], [30, 100]), 30)]);
+  assert(clamped.weight === 115, `a 30-rep 100 clamps to +15%, got ${clamped.weight}`);
+  assert(clamped.reps === 15, `pulled down to the range ceiling, got ${clamped.reps}`);
+  console.log('  old low-rep weights settle into the range, clamped to ±15%');
 }
 
 // --- 6. nothing logged yet ------------------------------------------------
@@ -359,8 +381,9 @@ console.log('\n=== end to end through generateLiftSession ===');
   }
   console.log(`  every one of ${first.exercises.length} exercises carries a suggestion`);
 
-  // Feed the generated session back as history, all reps completed, and the
-  // loaded lifts must come back heavier.
+  // Feed the generated session back as history, all reps completed. Under
+  // reps-first progression the weight holds (reps climb instead) — but it
+  // must never drop, and never breach a Home cap.
   const performed = session({
     date: '2026-08-10',
     location: 'Home',
