@@ -79,6 +79,14 @@ export const seedSettings = {
   // How many recent lift sessions the generator looks back over before it is
   // willing to reuse a variationGroup. 0 disables freshness filtering.
   freshnessWindow: 3,
+  // Returning from a break: after a 10+ day gap in training (see
+  // RAMP_BACK.minGapDays in rampBack.js), this many lift sessions run easier —
+  // reduced weights and sets — before normal programming resumes.
+  rampBackSessions: 2,
+  // The break the user chose to skip ramping back from, keyed by the date of
+  // the last session before that break. null = no skip recorded. A later,
+  // different break is offered again regardless of this value.
+  rampBackSkipped: null,
   // Audible chime when a rest timer ends. Default on.
   soundEnabled: true,
 };

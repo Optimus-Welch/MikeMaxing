@@ -100,6 +100,9 @@ export default function Run() {
         templateName: base.templateName,
         band: base.band,
         seed: base.seed,
+        // A ramp-back session (returning from a break) is stamped so
+        // progression knows to ignore its deliberately-light numbers.
+        ...(base.session?.rampBack ? { rampBack: true } : {}),
         startedAt: base.startedAt,
         endedAt: Date.now(),
         // Roll the flat per-set results back up per exercise, which is the
