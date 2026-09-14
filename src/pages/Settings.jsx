@@ -54,6 +54,7 @@ export default function Settings() {
       bands: settings.bands,
       durationTargets: settings.durationTargets,
       freshnessWindow: settings.freshnessWindow,
+      rampBackSessions: settings.rampBackSessions,
       soundEnabled: settings.soundEnabled,
     });
     updateProfile({ goals: profile.goals });
@@ -137,6 +138,22 @@ export default function Settings() {
               </div>
             </div>
           ))}
+        </section>
+
+        <section className="card">
+          <h2>Returning from a break</h2>
+          <p className="hint">
+            After 10 or more days without a lift or cardio session, this many lift sessions run
+            easier — lighter weights and fewer sets, same rep philosophy — before normal
+            programming resumes. Today explains it when it happens and offers a skip.
+          </p>
+          <div className="settings-grid">
+            <NumberField
+              label="Ramp-back sessions"
+              value={settings.rampBackSessions}
+              onChange={(v) => setSettings((s) => ({ ...s, rampBackSessions: v }))}
+            />
+          </div>
         </section>
 
         <section className="card">

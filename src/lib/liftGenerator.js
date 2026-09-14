@@ -20,7 +20,8 @@ import {
   PATTERN_LABELS,
   LOCATION_LOAD_CAPS,
 } from './exercises.js';
-import { suggestFor } from './progression.js';
+import { suggestFor, fitToEquipment } from './progression.js';
+import { rampBackWeightFactor, RAMP_BACK } from './rampBack.js';
 
 // -- seeded RNG ------------------------------------------------------------
 // mulberry32: tiny, fast, good enough for picking exercises. Seeded so a
@@ -285,9 +286,13 @@ export function candidatesForSlot({
 
 // -- prescription ----------------------------------------------------------
 
-function prescribeFor({ exercise, emphasis, band, rng, schemeOverride }) {
+function prescribeFor({ exercise, emphasis, band, rng, schemeOverride, rampBack = null }) {
   const plan = BAND_PRESCRIPTION[band] ?? BAND_PRESCRIPTION.Yellow;
-  const sets = plan.sets[emphasis];
+  // Returning from a break, volume comes down regardless of band: the number
+  // of ramp-back sessions still remaining is the number of sets dropped, so
+  // session 1 of 2 is two sets lighter and session 2 one set lighter.
+  const setsBack = rampBack ? rampBack.sessionsTotal - rampBack.sessionNumber + 1 : 0;
+  const sets = Math.max(RAMP_BACK.minSets, plan.sets[emphasis] - setsBack);
 
   const isTimeBased = exercise.metric === 'time';
   const [lo, hi] =
@@ -372,6 +377,9 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride }) {
  * @param {number}   args.exerciseCount  how many exercises to include (duration)
  * @param {number}   args.seed           RNG seed; change it to regenerate
  * @param {object}   [args.template]     force a template (otherwise alternates)
+ * @param {object}   [args.rampBack]     returning-from-a-break status from
+ *                                       rampBack.js ({sessionNumber, sessionsTotal,
+ *                                       gapDays}); reduces sets and weights
  */
 export function generateLiftSession({
   location,
@@ -382,6 +390,7 @@ export function generateLiftSession({
   exerciseCount = 5,
   seed = 1,
   template: forcedTemplate,
+  rampBack = null,
 }) {
   const plan = BAND_PRESCRIPTION[band] ?? BAND_PRESCRIPTION.Yellow;
   const template = forcedTemplate ?? nextTemplate(sessionHistory);
@@ -435,6 +444,7 @@ export function generateLiftSession({
         relaxed, // surfaced in the UI as "limited options here"
         location,
         sessionHistory,
+        rampBack,
       }),
     );
   }
@@ -462,6 +472,16 @@ export function generateLiftSession({
     freshnessWindow,
     intensityLabel: plan.label,
     bandNote: plan.note,
+    // Carried on the session so run mode can stamp the logged session as
+    // ramp-back work (which progression then ignores as evidence), and so
+    // swaps prescribe at the same reduced level. Null in normal programming.
+    rampBack: rampBack
+      ? {
+          sessionNumber: rampBack.sessionNumber,
+          sessionsTotal: rampBack.sessionsTotal,
+          gapDays: rampBack.gapDays,
+        }
+      : null,
     exercises,
     skipped,
   };
@@ -528,8 +548,9 @@ export function makeSessionExercise({
   relaxed = false,
   location = null,
   sessionHistory = [],
+  rampBack = null,
 }) {
-  const prescription = prescribeFor({ exercise, emphasis, band, rng });
+  const prescription = prescribeFor({ exercise, emphasis, band, rng, rampBack });
 
   const entry = {
     exerciseId: exercise.id,
@@ -552,13 +573,39 @@ export function makeSessionExercise({
   // What to actually load, from what you logged here before. Attached to the
   // entry so it flows through blocks -> run steps untouched, and so a swapped
   // exercise gets its own suggestion rather than inheriting the old one's.
-  const suggestion = suggestFor({
+  let suggestion = suggestFor({
     exercise,
     location,
     sessionHistory,
     target: prescription,
     entry,
   });
+
+  // Returning from a break: prescribe BELOW what progression would otherwise
+  // suggest. The normal suggestion is still computed first (and ramp-back
+  // sessions are invisible to progression as history), so nothing here moves
+  // where the rep-first walk resumes once the ramp-back is over.
+  if (rampBack && suggestion.source !== 'timed') {
+    const factor = rampBackWeightFactor(rampBack.sessionNumber, rampBack.sessionsTotal);
+    const scaled =
+      suggestion.weight != null
+        ? fitToEquipment(suggestion.weight * factor, suggestion.equipment ?? {}).weight
+        : null;
+    suggestion = {
+      ...suggestion,
+      weight: scaled,
+      // Low end of the working range: the same 10–15 philosophy, just less.
+      reps: prescription.repFloor ?? suggestion.reps,
+      verdict: 'deload',
+      atRepCeiling: false,
+      note:
+        `Ramp-back ${rampBack.sessionNumber} of ${rampBack.sessionsTotal} after ${rampBack.gapDays} days off — ` +
+        (scaled != null
+          ? `about ${Math.round((1 - factor) * 100)}% under your usual weight, low end of the reps. `
+          : 'low end of the reps. ') +
+        'Progression resumes where it left off.',
+    };
+  }
 
   // Progression can push the reps up when the load is capped out at Home. If
   // it does, the printed prescription has to follow — "4 × 10" beside a
@@ -601,6 +648,8 @@ function replaceExerciseAt(session, index, exercise, { relaxed = false, rng, ses
     relaxed,
     location: session.location,
     sessionHistory,
+    // A swap during a ramp-back session must land at the same reduced level.
+    rampBack: session.rampBack ?? null,
   });
   const exercises = reresolveSupersets(
     session.exercises.map((e, i) => (i === index ? replacement : e)),

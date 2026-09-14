@@ -11,7 +11,9 @@ import {
   clearActiveSession,
   addSession,
   upsertReadinessEntry,
+  updateSettings,
 } from '../lib/db.js';
+import { rampBackStatus } from '../lib/rampBack.js';
 import {
   parseReadinessScore,
   scoreToBand,
@@ -126,6 +128,16 @@ export default function Today() {
     selectedType === 'Lift' && selectedLocation && band && (band !== 'Red' || forceLiftOnRed);
   const generationBand = band === 'Red' ? 'Orange' : band;
 
+  // Returning from a break: derived from history alone (see rampBack.js), so
+  // there is no stored mode to get stuck in. The only persisted piece is the
+  // user's choice to skip, keyed to this specific break.
+  const rampStatus = useMemo(
+    () => rampBackStatus({ sessionHistory, today: todayDate, sessions: settings.rampBackSessions }),
+    [sessionHistory, todayDate, settings.rampBackSessions],
+  );
+  const rampBack =
+    rampStatus && settings.rampBackSkipped !== rampStatus.lastActiveDate ? rampStatus : null;
+
   // Generation is pure, so it can just be derived rather than held in state.
   const liftSession = useMemo(() => {
     if (!shouldGenerate) return null;
@@ -137,6 +149,7 @@ export default function Today() {
       freshnessWindow: settings.freshnessWindow,
       exerciseCount: duration.liftExercises,
       seed,
+      rampBack,
     });
   }, [
     shouldGenerate,
@@ -147,6 +160,7 @@ export default function Today() {
     settings.freshnessWindow,
     duration.liftExercises,
     seed,
+    rampBack,
   ]);
 
   // Apply any preview swaps on top of the generated session, then any weight
@@ -301,6 +315,29 @@ export default function Today() {
           </p>
         </div>
       </section>
+
+      {/* Returning from a break: say WHY today looks lighter, and offer the
+          way out. Shown before readiness is even entered, since it explains
+          the plan that is about to be generated. */}
+      {rampBack && (
+        <section className="card">
+          <h2>Back after {rampBack.gapDays} days off</h2>
+          <p className="hint">
+            The first sessions after a break run easier on purpose. This is ramp-back session{' '}
+            {rampBack.sessionNumber} of {rampBack.sessionsTotal}: lighter weights and fewer sets,
+            same 10–15 rep philosophy. It is not logged as progression evidence, so your normal
+            numbers resume exactly where they left off.
+          </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ marginTop: 14 }}
+            onClick={() => updateSettings({ rampBackSkipped: rampBack.lastActiveDate })}
+          >
+            Skip — go straight to normal programming
+          </button>
+        </section>
+      )}
 
       {readinessScore == null && (
         <section className="card">

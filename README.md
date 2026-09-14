@@ -15,7 +15,7 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
-`npm run check` runs the linter plus seven data/logic checks:
+`npm run check` runs the linter plus ten data/logic checks:
 
 - `npm run check:library` validates the exercise library (no exercise is
   tagged for a location that lacks its equipment) and prints per-location
@@ -42,6 +42,11 @@ preview` serves that build locally to test the PWA install flow.
   calendar day on the user's own clock, so they must be parsed with
   `parseLocalDate()` — `new Date('2026-08-03')` is UTC midnight and silently
   drops a Monday session west of UTC.
+- `npm run check:rampback` covers returning-from-a-break: gap detection (a
+  cardio session ends a break, a logged Rest day does not), the window
+  expiring on its own, the reduction maths, and — the assertion that matters
+  most — that a ramp-back session in history leaves normal progression exactly
+  where it was before the break.
 
 ## Cloud sync
 
@@ -485,6 +490,33 @@ question.
 
 Suggestions are overridable: a stepper on the session preview that moves in
 the equipment's real increment, and the weight field in run mode.
+
+### Returning from a break
+
+A gap of **10 or more days** without a lift *or* cardio session (see
+`RAMP_BACK.minGapDays`) means detraining has started, and jumping straight
+back to your pre-break numbers is how people get hurt. Today detects the gap
+and offers a short ramp-back: `settings.rampBackSessions` (default 2) lift
+sessions that run deliberately easier.
+
+| | during ramp-back |
+|---|---|
+| **Weight** | below what progression would otherwise suggest — 5% per remaining session, so 90% then 95%, floored at 85% (`minWeightFactor`) |
+| **Sets** | one fewer per remaining session, never below `minSets` (2), regardless of readiness band |
+| **Reps** | the bottom of the normal 10–15 range — same philosophy, less of it |
+
+**The state is derived, not stored.** `rampBackStatus()` scans history for the
+most recent qualifying gap and counts the lift sessions logged since it, so
+there is no mode to get stuck in: the offer expires by itself once the
+sessions are done. The only persisted pieces are the session count and, if you
+tap *Skip*, `settings.rampBackSkipped` — keyed to the date of the last session
+before **that** break, so skipping one ramp-back never suppresses the next.
+
+**Progression does not lose its place.** Sessions performed as ramp-back are
+logged with `rampBack: true`, and every history reader in `progression.js`
+skips them. A squat sitting at 135 × 13 before a 25-day break runs at 100 × 10
+and 105 × 10 on the way back, then resumes at **135 × 14** — the rep-first walk
+continues from where it stopped, not from the deliberately-light numbers.
 
 ## Trends
 

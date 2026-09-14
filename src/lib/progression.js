@@ -124,6 +124,10 @@ export function fitToEquipment(weight, { step, cap }) {
 export function lastPerformanceAt(sessionHistory, exerciseId, location) {
   for (const session of sessionHistory ?? []) {
     if (session.type !== 'Lift') continue;
+    // Ramp-back sessions (returning from a break) are deliberately light and
+    // are NOT evidence: skipping them here is what lets normal progression
+    // resume from where it left off before the break. See rampBack.js.
+    if (session.rampBack) continue;
     if (location && session.location !== location) continue;
     if (!Array.isArray(session.exercises)) continue;
 
@@ -166,6 +170,10 @@ export function topOfRangeStreak(sessionHistory, exerciseId, location, ceiling) 
   let streak = 0;
   for (const session of sessionHistory ?? []) {
     if (session.type !== 'Lift') continue;
+    // Ramp-back sessions (returning from a break) are deliberately light and
+    // are NOT evidence: skipping them here is what lets normal progression
+    // resume from where it left off before the break. See rampBack.js.
+    if (session.rampBack) continue;
     if (location && session.location !== location) continue;
     if (!Array.isArray(session.exercises)) continue;
 
@@ -191,6 +199,10 @@ function relatedPerformance(sessionHistory, { variationGroup, pattern }, locatio
 
   for (const session of sessionHistory ?? []) {
     if (session.type !== 'Lift') continue;
+    // Ramp-back sessions (returning from a break) are deliberately light and
+    // are NOT evidence: skipping them here is what lets normal progression
+    // resume from where it left off before the break. See rampBack.js.
+    if (session.rampBack) continue;
     if (location && session.location !== location) continue;
     if (!Array.isArray(session.exercises)) continue;
 
