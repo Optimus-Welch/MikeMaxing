@@ -136,12 +136,15 @@ export default function SessionEditor({ session, onSave, onClose }) {
           {lift &&
             draft.exercises.map((exercise, exIndex) => (
               <section className="edit-block" key={`${exercise.exerciseId}-${exIndex}`}>
-                <div className="edit-block-head">{exercise.name}</div>
+                <div className="edit-block-head">
+                  {exercise.name}
+                  {exercise.unilateral && <span className="per-side-tag">per side</span>}
+                </div>
 
                 <div className="edit-row is-head" aria-hidden="true">
                   <span className="edit-set-no">Set</span>
-                  <span>Weight</span>
-                  <span>Reps</span>
+                  <span>{exercise.unilateral ? 'Weight / side' : 'Weight'}</span>
+                  <span>{exercise.unilateral ? 'Reps / side' : 'Reps'}</span>
                   <span>RPE</span>
                   <span />
                 </div>

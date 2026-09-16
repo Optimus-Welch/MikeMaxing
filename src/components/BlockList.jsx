@@ -117,7 +117,10 @@ export default function BlockList({ blocks, onSwap, onAdjustWeight, location }) 
                 key={`${block.id}-${item.exerciseId ?? item.id ?? i}`}
               >
                 <div className="bi-main">
-                  <div className="bi-name">{item.kind === 'rest' ? 'Rest' : item.name}</div>
+                  <div className="bi-name">
+                    {item.kind === 'rest' ? 'Rest' : item.name}
+                    {item.unilateral && <span className="per-side-tag">per side</span>}
+                  </div>
                   {item.kind !== 'rest' && (item.detail || item.schemeName) && (
                     <div className="bi-detail">{item.detail ?? item.schemeName}</div>
                   )}

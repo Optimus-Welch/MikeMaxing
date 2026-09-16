@@ -1694,3 +1694,38 @@ button.sync-banner:active {
 .sheet-actions button {
   flex: 1;
 }
+
+/* ---- unilateral (per side) --------------------------------------------- */
+
+/* A quiet marker beside the exercise name. The prescription itself already
+   says "per side"; this is the at-a-glance version for scanning a card. */
+.per-side-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* In run mode the stakes are higher — this is the moment you decide whether
+   to do both sides, and the moment you type a number. Say it in a sentence. */
+.per-side-banner {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.per-side-banner strong {
+  color: var(--text);
+}

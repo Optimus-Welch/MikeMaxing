@@ -63,6 +63,9 @@ export function draftFromSession(session) {
     exercises: session.exercises.map((entry) => ({
       exerciseId: entry.exerciseId,
       name: entry.name,
+      // So the editor can label the columns "/ side" and the numbers you type
+      // mean the same thing they meant in run mode.
+      unilateral: entry.unilateral === true,
       sets: (entry.sets ?? []).map((set) => ({
         reps: set.reps != null ? String(set.reps) : '',
         weight: set.weight != null ? String(set.weight) : '',

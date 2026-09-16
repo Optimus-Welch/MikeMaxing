@@ -13,6 +13,15 @@
 //   tier              'primary'   — heavy compound, goes first
 //                     'secondary' — compound accessory
 //                     'accessory' — isolation / low-skill finisher
+//   unilateral        true when the movement is performed ONE SIDE AT A TIME,
+//                     so its prescription, its logging and its suggested
+//                     progression are all "per side" rather than total. This
+//                     is about how a set is PERFORMED, and is deliberately
+//                     independent of capStrategy: 'unilateral' (which is about
+//                     why a lift stays hard under a load cap) and of
+//                     movementPattern: 'unilateral' (which is a slot in the
+//                     templates). A Tempo Bulgarian Split Squat is performed
+//                     per side but its capStrategy is 'tempo'.
 //   capFriendly       true when the lift stays genuinely hard under Home's
 //                     load caps (see LOCATION_LOAD_CAPS)
 //   capStrategy       WHY it stays hard: 'unilateral' | 'tempo' | 'highRep' |
@@ -320,6 +329,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'single-leg-rdl',
+    unilateral: true,
     name: 'Single-Leg RDL',
     movementPattern: 'hinge',
     primaryMuscles: ['hamstrings', 'glutes'],
@@ -334,6 +344,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'b-stance-rdl',
+    unilateral: true,
     name: 'B-Stance RDL',
     movementPattern: 'hinge',
     primaryMuscles: ['hamstrings', 'glutes'],
@@ -359,6 +370,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'single-leg-hip-thrust',
+    unilateral: true,
     name: 'Single-Leg Hip Thrust',
     movementPattern: 'hinge',
     primaryMuscles: ['glutes'],
@@ -608,6 +620,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'half-kneeling-dumbbell-press',
+    unilateral: true,
     name: 'Half-Kneeling Single-Arm Press',
     movementPattern: 'verticalPush',
     primaryMuscles: ['front delts'],
@@ -681,6 +694,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'one-arm-dumbbell-row',
+    unilateral: true,
     name: 'One-Arm Dumbbell Row',
     movementPattern: 'horizontalPull',
     primaryMuscles: ['lats', 'mid back'],
@@ -804,6 +818,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'half-kneeling-single-arm-pulldown',
+    unilateral: true,
     name: 'Half-Kneeling Single-Arm Pulldown',
     movementPattern: 'verticalPull',
     primaryMuscles: ['lats'],
@@ -856,6 +871,7 @@ export const seedExerciseLibrary = [
   // ------------------------------------------------------ LUNGE/UNILATERAL
   {
     id: 'walking-lunge',
+    unilateral: true,
     name: 'Walking Lunge',
     movementPattern: 'unilateral',
     primaryMuscles: ['quads', 'glutes'],
@@ -869,6 +885,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'reverse-lunge',
+    unilateral: true,
     name: 'Reverse Lunge',
     movementPattern: 'unilateral',
     primaryMuscles: ['glutes', 'quads'],
@@ -882,6 +899,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'lateral-lunge',
+    unilateral: true,
     name: 'Lateral Lunge',
     movementPattern: 'unilateral',
     primaryMuscles: ['quads', 'adductors'],
@@ -895,6 +913,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'bulgarian-split-squat',
+    unilateral: true,
     name: 'Bulgarian Split Squat',
     movementPattern: 'unilateral',
     primaryMuscles: ['quads', 'glutes'],
@@ -909,6 +928,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'tempo-bulgarian-split-squat',
+    unilateral: true,
     name: 'Tempo Bulgarian Split Squat (3s down)',
     movementPattern: 'unilateral',
     primaryMuscles: ['quads', 'glutes'],
@@ -922,6 +942,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'split-squat',
+    unilateral: true,
     name: 'Split Squat',
     movementPattern: 'unilateral',
     primaryMuscles: ['quads', 'glutes'],
@@ -935,6 +956,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'front-foot-elevated-split-squat',
+    unilateral: true,
     name: 'Front-Foot-Elevated Split Squat',
     movementPattern: 'unilateral',
     primaryMuscles: ['quads', 'glutes'],
@@ -949,6 +971,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'step-up',
+    unilateral: true,
     name: 'Step-Up',
     movementPattern: 'unilateral',
     primaryMuscles: ['quads', 'glutes'],
@@ -962,6 +985,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'deficit-reverse-lunge',
+    unilateral: true,
     name: 'Deficit Reverse Lunge',
     movementPattern: 'unilateral',
     primaryMuscles: ['glutes', 'quads'],
@@ -975,6 +999,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'single-leg-leg-press',
+    unilateral: true,
     name: 'Single-Leg Leg Press',
     movementPattern: 'unilateral',
     primaryMuscles: ['quads', 'glutes'],
@@ -1002,6 +1027,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'side-plank',
+    unilateral: true,
     metric: 'time',
     name: 'Side Plank',
     movementPattern: 'core',
@@ -1028,6 +1054,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'dead-bug',
+    unilateral: true,
     name: 'Dead Bug',
     movementPattern: 'core',
     primaryMuscles: ['core'],
@@ -1040,6 +1067,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'bird-dog',
+    unilateral: true,
     name: 'Bird Dog',
     movementPattern: 'core',
     primaryMuscles: ['core', 'spinal erectors'],
@@ -1076,6 +1104,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'pallof-press',
+    unilateral: true,
     name: 'Pallof Press',
     movementPattern: 'core',
     primaryMuscles: ['obliques', 'core'],
@@ -1129,6 +1158,7 @@ export const seedExerciseLibrary = [
   },
   {
     id: 'suitcase-carry',
+    unilateral: true,
     metric: 'time',
     name: 'Suitcase Carry',
     movementPattern: 'carry',
@@ -1172,6 +1202,25 @@ export const seedExerciseLibrary = [
 
 // -- helpers ---------------------------------------------------------------
 
+// How a per-side prescription is written. One string, used by the session
+// card, run mode and the logging labels, so they can never drift apart.
+export const PER_SIDE_LABEL = 'per side';
+
+/** Is this movement performed one side at a time? */
+export const isUnilateral = (exercise) => exercise?.unilateral === true;
+
+/**
+ * How many times a prescribed set is actually performed.
+ *
+ * The number that matters for TOTAL WORK. Everything a person reads or types
+ * stays per side — the prescription, the weight in your hand, the reps you
+ * log, the next suggestion — and this is used only where the question is
+ * genuinely "how much work was done in total", which is load-volume. Doubling
+ * a per-side rep count anywhere a human reads it would be exactly the silent
+ * conversion this feature exists to prevent.
+ */
+export const sidesFor = (exercise) => (isUnilateral(exercise) ? 2 : 1);
+
 export function isAvailableAt(exercise, location) {
   if (!exercise.locations.includes(location)) return false;
   const have = LOCATION_EQUIPMENT[location] ?? [];
@@ -1206,6 +1255,17 @@ export function validateLibrary(library = seedExerciseLibrary) {
       }
     }
     if (!ex.variationGroup) problems.push(`${ex.id}: missing variationGroup`);
+
+    // Every movement in the unilateral SLOT is performed a side at a time, so
+    // an untagged one is an oversight rather than a decision. The reverse does
+    // not hold: plenty of per-side work (one-arm rows, side planks, suitcase
+    // carries) lives under other patterns.
+    if (ex.movementPattern === 'unilateral' && ex.unilateral !== true) {
+      problems.push(`${ex.id}: a unilateral-pattern movement must be tagged unilateral: true`);
+    }
+    if (ex.unilateral != null && ex.unilateral !== true) {
+      problems.push(`${ex.id}: unilateral must be true or absent, never ${ex.unilateral}`);
+    }
   }
 
   return problems;
