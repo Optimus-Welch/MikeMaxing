@@ -1221,6 +1221,21 @@ export const isUnilateral = (exercise) => exercise?.unilateral === true;
  */
 export const sidesFor = (exercise) => (isUnilateral(exercise) ? 2 : 1);
 
+/**
+ * How many times one LOGGED set should be counted for total-work volume.
+ *
+ * Since both sides became separate steps in run mode, a per-side set is
+ * recorded once per side and carries `side` — so it counts once, like any
+ * other set. Sets logged before that change stood for both sides with no
+ * `side` on them, and still count twice. Keying off the set rather than the
+ * exercise is what lets one history hold both shapes without either being
+ * counted wrongly.
+ */
+export function volumeSidesFor(exercise, set) {
+  if (set?.side) return 1;
+  return sidesFor(exercise);
+}
+
 export function isAvailableAt(exercise, location) {
   if (!exercise.locations.includes(location)) return false;
   const have = LOCATION_EQUIPMENT[location] ?? [];

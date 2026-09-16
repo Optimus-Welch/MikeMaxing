@@ -123,13 +123,21 @@ export default function Run() {
           // Without this, "did you complete it?" is unanswerable later: the
           // prescription was only ever stored as display text like "4 × 10",
           // and progression cannot judge a session against a string.
-          targetSets: ex.sets ?? null,
+          // Both sides are logged as their own set, so the target has to be
+          // counted the same way or progression compares 6 logged sets against
+          // a target of 3 and reads a half-finished session as a triumph.
+          targetSets: ex.sets != null ? ex.sets * (ex.unilateral ? 2 : 1) : null,
           targetReps: ex.reps ?? null,
           targetSeconds: ex.seconds ?? null,
           suggestedWeight: ex.suggestion?.weight ?? null,
           sets: performed
             .filter((r) => r.exerciseId === ex.exerciseId)
-            .map((r) => ({ reps: r.reps, weight: r.weight, rpe: r.rpe ?? null })),
+            .map((r) => ({
+              reps: r.reps,
+              weight: r.weight,
+              rpe: r.rpe ?? null,
+              ...(r.side ? { side: r.side } : {}),
+            })),
         })),
       };
 
@@ -173,6 +181,10 @@ export default function Run() {
             stepKey: step.key,
             exerciseId: step.item.exerciseId,
             name: step.item.name,
+            // Which side this set was. Its presence is also what tells the
+            // volume maths that both sides were logged separately rather than
+            // one row standing for both (see volumeSidesFor).
+            ...(step.side ? { side: step.side } : {}),
             reps: reps === '' || reps == null ? null : Number(reps),
             weight: weight === '' || weight == null ? null : Number(weight),
             done: true,
@@ -189,7 +201,12 @@ export default function Run() {
       ...state,
       results: {
         ...state.results,
-        [step.key]: { stepKey: step.key, exerciseId: step.item.exerciseId, skipped: true },
+        [step.key]: {
+          stepKey: step.key,
+          exerciseId: step.item.exerciseId,
+          ...(step.side ? { side: step.side } : {}),
+          skipped: true,
+        },
       },
     });
   }, [state, step, advanceFrom]);
@@ -244,7 +261,7 @@ export default function Run() {
           <div className="hint" style={{ marginTop: 2 }}>
             {step.kind === 'warmup' || (isRest && step.warmupIndex != null)
               ? `Warm-up ${step.warmupIndex} of ${step.warmupCount}`
-              : `Round ${step.round} of ${step.totalRounds}`}
+              : `Round ${step.round} of ${step.totalRounds}${step.sideLabel ? ` · ${step.sideLabel}` : ''}`}
             {' · '}
             {doneCount}/{workSteps.length} sets done
           </div>
@@ -328,7 +345,11 @@ function RestView({ endsAt, seconds, next, soundEnabled, onSkip, onAdd }) {
   }, [remaining, soundEnabled, onSkip]);
 
   const nextLabel =
-    next?.kind === 'exercise' ? next.item.name : next?.kind === 'prep' ? next.item.name : 'Finish';
+    next?.kind === 'exercise'
+      ? `${next.item.name}${next.sideLabel ? ` · ${next.sideLabel}` : ''}`
+      : next?.kind === 'prep'
+        ? next.item.name
+        : 'Finish';
 
   return (
     <>
@@ -462,16 +483,24 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
         <div className="run-context-row">
           <span className="eyebrow">
             Set {step.round} of {step.totalRounds}
+            {step.sideLabel ? ` · ${step.sideLabel}` : ''}
           </span>
           <DemoLink demo={demoFor(item)} />
         </div>
-        <h1 className="run-exercise-name">{item.name}</h1>
-        {/* Unambiguous at the moment of logging: this set is one side's work,
-            and the numbers in the boxes below are that side's numbers. */}
-        {item.unilateral && (
+        <h1 className="run-exercise-name">
+          {item.name}
+          {step.sideLabel && <span className="run-side-label">{step.sideLabel}</span>}
+        </h1>
+        {/* Each side is its own step, so this screen is one side's work and
+            the boxes below are that side's numbers. Saying which side is still
+            owed is the whole point: "Set 3 of 3" on its own never did. */}
+        {step.side && (
           <p className="per-side-banner">
-            One side at a time — {isTimed ? `${item.seconds}s` : `${item.reps} reps`} each side.
-            Log <strong>one side</strong> below.
+            <strong>{step.sideLabel}</strong> — {isTimed ? `${item.seconds}s` : `${item.reps} reps`}{' '}
+            on this side.{' '}
+            {step.sideIndex < step.sideCount
+              ? 'The other side comes next, before the rest.'
+              : 'Last side of this round.'}
           </p>
         )}
 

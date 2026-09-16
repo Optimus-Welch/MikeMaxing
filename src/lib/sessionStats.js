@@ -1,4 +1,4 @@
-import { sidesFor } from './exercises.js';
+import { volumeSidesFor } from './exercises.js';
 
 // Finish-screen maths. Pure — takes the run results plus prior history and
 // works out what was achieved.
@@ -7,18 +7,17 @@ import { sidesFor } from './exercises.js';
 // no tonnage, which is honest: a 45s plank is not "0 lb of effort", it just
 // is not load-volume, and the finish screen counts it separately.
 //
-// A per-side movement counts BOTH sides. This is the one place a unilateral
-// number is doubled, and it is not a silent conversion: volume is the only
-// figure here that answers "how much total work was done", and a set of 10
-// per side at 50 lb is 1000 lb of work however it is written down. Counting
-// one side would make an all-unilateral leg day read as half a leg day on the
-// muscle map, which is what that chart exists to get right. Every number a
-// person reads or types stays per side.
+// Volume counts every side actually performed. Since both sides became their
+// own step in run mode, a per-side set is logged once per side and carries
+// `side`, so it simply counts once. Sets logged before that change stood for
+// both sides with nothing to say so, and are still counted twice — see
+// volumeSidesFor. Either way the answer is total work done, and every number
+// a person reads or types stays per side.
 export function totalVolume(performed, library) {
   return performed.reduce((sum, s) => {
     if (s.weight == null || s.reps == null) return sum;
     const exercise = (library ?? []).find((e) => e.id === s.exerciseId);
-    return sum + s.weight * s.reps * sidesFor(exercise);
+    return sum + s.weight * s.reps * volumeSidesFor(exercise, s);
   }, 0);
 }
 

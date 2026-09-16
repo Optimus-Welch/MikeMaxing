@@ -90,6 +90,7 @@ export default function SessionOverlay({ steps, results, currentIndex, restRemai
               row.rounds.push({
                 index,
                 round: step.round,
+                sideLabel: step.sideLabel ?? null,
                 done: !!results[step.key]?.done,
                 skipped: !!results[step.key]?.skipped,
                 current: index === currentIndex,
@@ -131,7 +132,7 @@ export default function SessionOverlay({ steps, results, currentIndex, restRemai
                             (r.skipped ? ' is-skipped' : '') +
                             (r.current ? ' is-current' : '')
                           }
-                          title={`Round ${r.round}`}
+                          title={r.sideLabel ? `Round ${r.round} · ${r.sideLabel}` : `Round ${r.round}`}
                         />
                       ))}
                     </span>

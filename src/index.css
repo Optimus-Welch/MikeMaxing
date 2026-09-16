@@ -1729,3 +1729,20 @@ button.sync-banner:active {
 .per-side-banner strong {
   color: var(--text);
 }
+
+/* The side being worked, beside the exercise name in run mode. Large enough
+   to read at arm's length mid-set — this is the thing that tells you the
+   second leg is still owed. */
+.run-side-label {
+  display: block;
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.bi-detail.is-structure {
+  color: var(--text-dim);
+}
