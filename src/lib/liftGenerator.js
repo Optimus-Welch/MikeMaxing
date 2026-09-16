@@ -16,6 +16,8 @@
 
 import {
   isAvailableAt,
+  isUnilateral,
+  PER_SIDE_LABEL,
   CAP_SENSITIVE_PATTERNS,
   PATTERN_LABELS,
   LOCATION_LOAD_CAPS,
@@ -130,22 +132,28 @@ export const BAND_PRESCRIPTION = {
 // Variety so it is not 3x10 forever. `tiers` limits where a scheme can land —
 // EMOM and drop sets have no business on a heavy primary lift.
 
+// Suffix appended to a rep or time count for a movement performed one side at
+// a time. Passed into every scheme's describe() rather than bolted on after,
+// so "4 × 12 per side" and "EMOM 8 min × 6 per side" are both built in one
+// place and a new scheme cannot forget it.
+const perSide = (unilateral) => (unilateral ? ` ${PER_SIDE_LABEL}` : '');
+
 export const SCHEMES = [
   {
     id: 'straight',
     name: 'Straight sets',
     tiers: ['primary', 'secondary', 'accessory'],
-    describe: ({ sets, reps, rpe }) => ({
-      prescription: `${sets} × ${reps}`,
-      detail: `Straight sets at RPE ${rpe}. Rest fully between sets.`,
+    describe: ({ sets, reps, rpe, unilateral }) => ({
+      prescription: `${sets} × ${reps}${perSide(unilateral)}`,
+      detail: `Straight sets at RPE ${rpe}.${unilateral ? ' Both sides every set.' : ''} Rest fully between sets.`,
     }),
   },
   {
     id: 'tempo',
     name: 'Tempo',
     tiers: ['primary', 'secondary'],
-    describe: ({ sets, reps, rpe }) => ({
-      prescription: `${sets} × ${reps} @ 3-1-1`,
+    describe: ({ sets, reps, rpe, unilateral }) => ({
+      prescription: `${sets} × ${reps}${perSide(unilateral)} @ 3-1-1`,
       detail: `3s down, 1s pause, controlled up. Expect to use less weight than usual — RPE ${rpe} on feel, not on the number.`,
     }),
   },
@@ -153,8 +161,8 @@ export const SCHEMES = [
     id: 'superset',
     name: 'Superset',
     tiers: ['secondary', 'accessory'],
-    describe: ({ sets, reps, rpe }) => ({
-      prescription: `${sets} × ${reps} (superset)`,
+    describe: ({ sets, reps, rpe, unilateral }) => ({
+      prescription: `${sets} × ${reps}${perSide(unilateral)} (superset)`,
       detail: `Pair back-to-back with the next exercise, rest after the pair. RPE ${rpe}.`,
     }),
   },
@@ -162,8 +170,8 @@ export const SCHEMES = [
     id: 'dropSet',
     name: 'Drop set',
     tiers: ['accessory'],
-    describe: ({ sets, reps, rpe }) => ({
-      prescription: `${sets} × ${reps} + drop`,
+    describe: ({ sets, reps, rpe, unilateral }) => ({
+      prescription: `${sets} × ${reps}${perSide(unilateral)} + drop`,
       detail: `On the last set only, cut the weight ~30% and go again, stopping a couple of reps short of failure. RPE ${rpe} on the working sets.`,
     }),
   },
@@ -171,8 +179,8 @@ export const SCHEMES = [
     id: 'emom',
     name: 'EMOM',
     tiers: ['accessory'],
-    describe: ({ sets, reps }) => ({
-      prescription: `EMOM ${sets + 5} min × ${Math.max(3, Math.round(reps / 2))}`,
+    describe: ({ sets, reps, unilateral }) => ({
+      prescription: `EMOM ${sets + 5} min × ${Math.max(3, Math.round(reps / 2))}${perSide(unilateral)}`,
       detail: `Every minute on the minute, then rest what is left of the minute. Keep it submaximal.`,
     }),
   },
@@ -295,6 +303,7 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride, rampBack 
   const sets = Math.max(RAMP_BACK.minSets, plan.sets[emphasis] - setsBack);
 
   const isTimeBased = exercise.metric === 'time';
+  const unilateral = isUnilateral(exercise);
   const [lo, hi] =
     emphasis === 'accessory' || exercise.tier === 'accessory' ? plan.accessoryReps : plan.repRange;
   // First prescriptions start in the BOTTOM half of the range. Progression is
@@ -311,12 +320,14 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride, rampBack 
     return {
       schemeId: 'straight',
       schemeName: 'Straight sets',
-      prescription: `${sets} × ${seconds}s`,
+      prescription: `${sets} × ${seconds}s${perSide(unilateral)}`,
       detail:
-        exercise.movementPattern === 'carry'
+        (exercise.movementPattern === 'carry'
           ? 'Walk for time, upright and braced. Heavy enough that grip is working.'
-          : 'Hold with ribs down and glutes squeezed. Stop the set when the position breaks.',
+          : 'Hold with ribs down and glutes squeezed. Stop the set when the position breaks.') +
+        (unilateral ? ` Each side holds ${seconds}s.` : ''),
       sets,
+      unilateral,
       reps: null,
       seconds,
       rpe: plan.rpe,
@@ -343,7 +354,12 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride, rampBack 
   );
   const scheme =
     (schemeOverride && SCHEMES.find((s) => s.id === schemeOverride)) ?? pick(allowed, rng);
-  const { prescription, detail } = scheme.describe({ sets, reps, rpe: plan.rpe });
+  const { prescription, detail } = scheme.describe({
+    sets,
+    reps,
+    rpe: plan.rpe,
+    unilateral,
+  });
 
   return {
     schemeId: scheme.id,
@@ -351,6 +367,10 @@ function prescribeFor({ exercise, emphasis, band, rng, schemeOverride, rampBack 
     prescription,
     detail,
     sets,
+    // Per side, not total. Everything a person reads or types about this
+    // movement — the prescription above, the weight in their hand, the reps
+    // they log, the next suggestion — is one side's worth.
+    unilateral,
     reps,
     seconds: null,
     rpe: plan.rpe,
@@ -456,7 +476,7 @@ export function generateLiftSession({
     if (i === exercises.length - 1) {
       exercises[i].schemeId = 'straight';
       exercises[i].schemeName = 'Straight sets';
-      exercises[i].prescription = `${exercises[i].sets} × ${exercises[i].reps}`;
+      exercises[i].prescription = `${exercises[i].sets} × ${exercises[i].reps}${perSide(exercises[i].unilateral)}`;
       exercises[i].detail = `Straight sets at RPE ${exercises[i].rpe}.`;
     } else {
       exercises[i].supersetWith = exercises[i + 1].name;
@@ -618,6 +638,7 @@ export function makeSessionExercise({
       sets: entry.sets,
       reps: finalReps,
       rpe: entry.rpe,
+      unilateral: entry.unilateral,
     });
     if (redescribed) {
       entry.prescription = redescribed.prescription;

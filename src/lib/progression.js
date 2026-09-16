@@ -19,6 +19,14 @@
 // programs toward a 1-rep max, and a lift that runs out of both reps and
 // loadable weight is pointed at a harder variation instead.
 //
+// PER-SIDE MOVEMENTS PASS THROUGH UNCONVERTED. A one-arm row logged at 50 lb
+// for 12 was 50 lb in one hand for 12 reps on that side, and the suggestion
+// that comes back is the same kind of number: 50 lb in one hand. Nothing here
+// doubles, halves, or otherwise reinterprets a unilateral load — the whole
+// chain (prescription -> what you lift -> what you log -> what is suggested
+// next) is one side's work end to end, which is exactly why no code is needed
+// to keep it that way, only the discipline of not adding any.
+//
 // It only ever suggests. Every number here is overridable in the preview and
 // again in run mode.
 

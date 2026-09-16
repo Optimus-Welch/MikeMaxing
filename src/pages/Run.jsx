@@ -114,6 +114,11 @@ export default function Run() {
           variationGroup: ex.variationGroup,
           emphasis: ex.emphasis,
           prescription: ex.prescription,
+          // Recorded on the entry so anything reading history later knows the
+          // numbers below are one side's — the session editor's labels and the
+          // total-work volume maths both need it, and the library is not
+          // guaranteed to still agree years from now.
+          unilateral: ex.unilateral === true,
           // What was ASKED for, recorded structurally alongside what was done.
           // Without this, "did you complete it?" is unanswerable later: the
           // prescription was only ever stored as display text like "4 × 10",
@@ -397,7 +402,7 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
               <div className="t-value">{item.weight}</div>
             </div>
             <div className="target-box">
-              <div className="t-label">Reps</div>
+              <div className="t-label">{item.unilateral ? 'Reps / side' : 'Reps'}</div>
               <div className="t-value">{item.reps}</div>
             </div>
           </div>
@@ -461,10 +466,21 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
           <DemoLink demo={demoFor(item)} />
         </div>
         <h1 className="run-exercise-name">{item.name}</h1>
+        {/* Unambiguous at the moment of logging: this set is one side's work,
+            and the numbers in the boxes below are that side's numbers. */}
+        {item.unilateral && (
+          <p className="per-side-banner">
+            One side at a time — {isTimed ? `${item.seconds}s` : `${item.reps} reps`} each side.
+            Log <strong>one side</strong> below.
+          </p>
+        )}
 
         <div className="run-targets">
           <div className="target-box is-editable">
-            <div className="t-label">{isTimed ? 'Seconds' : 'Reps'}</div>
+            <div className="t-label">
+              {isTimed ? 'Seconds' : 'Reps'}
+              {item.unilateral ? ' / side' : ''}
+            </div>
             <input
               type="number"
               inputMode="numeric"
@@ -474,7 +490,7 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
             />
           </div>
           <div className="target-box is-editable">
-            <div className="t-label">Weight (lb)</div>
+            <div className="t-label">{item.unilateral ? 'Weight (lb / side)' : 'Weight (lb)'}</div>
             <input
               type="number"
               inputMode="decimal"

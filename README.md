@@ -15,7 +15,7 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
-`npm run check` runs the linter plus eleven data/logic checks:
+`npm run check` runs the linter plus twelve data/logic checks:
 
 - `npm run check:library` validates the exercise library (no exercise is
   tagged for a location that lacks its equipment) and prints per-location
@@ -48,6 +48,12 @@ preview` serves that build locally to test the PWA install flow.
   progression, the finish stats, the charts and the weekly tally all read the
   corrected numbers, and that an edit wins the sync merge against a stale copy
   held by a device whose collection is newer.
+- `npm run check:unilateral` audits the per-side tagging (every
+  unilateral-pattern movement tagged; a name-based net for anything new that
+  reads as single-leg/single-arm/split/lunge but was missed) and proves "per
+  side" means the same thing end to end — every scheme labels it, 720 generated
+  slots label it if and only if the movement is per side, and a 50 lb one-arm
+  row comes back as 50 lb per hand rather than 100 or 25.
 - `npm run check:rampback` covers returning-from-a-break: gap detection (a
   cardio session ends a break, a logged Rest day does not), the window
   expiring on its own, the reduction maths, and — the assertion that matters
@@ -277,6 +283,52 @@ a backgrounded tab stops firing intervals, but wall-clock time does not.
 **Finish.** Total volume, sets, exercises, an SVG muscle map shaded by how
 much each region was worked, and any weight or rep records beaten. A first-ever
 performance is deliberately *not* a record.
+
+### Per-side (unilateral) movements
+
+21 of the 84 library exercises are performed **one side at a time** and carry
+`unilateral: true`. The tag is about how a set is *performed*, and is
+deliberately independent of the two neighbouring fields it is easy to confuse
+it with:
+
+| field | question it answers |
+|---|---|
+| `unilateral` | is this set performed one side at a time? |
+| `capStrategy: 'unilateral'` | *why* does this lift stay hard under Home's load cap? |
+| `movementPattern: 'unilateral'` | which template slot does it fill? |
+
+They genuinely differ: a Tempo Bulgarian Split Squat is performed per side but
+its `capStrategy` is `'tempo'`, and a one-arm row is per side under the
+`horizontalPull` pattern. 7 of the tagged lifts carry a non-unilateral
+`capStrategy`, so deriving one from the other would have been wrong in both
+directions. `validateLibrary()` enforces that every unilateral-*pattern*
+movement is tagged; `check:unilateral` adds a name-based net so a new
+"Single-Leg …" entry nobody tagged fails the build.
+
+**"Per side" means the same thing at every step**, which is the whole point:
+
+- **Prescription** — the suffix is passed into every scheme's `describe()`
+  rather than bolted on afterwards, so `4 × 12 per side`, `3 × 11 per side @
+  3-1-1` and `EMOM 8 min × 6 per side` are all built in one place and a new
+  scheme cannot forget it. Timed work too: `3 × 40s per side`.
+- **The card** — a `per side` chip beside the name, for scanning.
+- **Run mode** — a sentence at the moment it matters (*"One side at a time —
+  12 reps each side. Log **one side** below."*) and the input labels become
+  `Reps / side` and `Weight (lb / side)`, so what you type is unambiguous.
+- **The session editor** — the same `/ side` column headers, from the
+  `unilateral` flag stored on the logged entry.
+- **Progression** — nothing converts. A one-arm row logged at 50 lb for 12 is
+  50 lb in one hand, and the next suggestion is 50 lb in one hand. The chain is
+  one side's work end to end, so no code keeps it that way — only the
+  discipline of not adding any.
+
+**Load-volume is the one exception, and it is deliberate.** `totalVolume()` and
+`muscleVolume()` count *both* sides, because volume is the only figure that
+answers "how much total work was done" — a set of 10 per side at 50 lb is
+1000 lb of work however it is written down, and counting one side would make an
+all-unilateral leg day read as half a leg day on the very chart that exists to
+show balance. Set *counts* are not doubled: one set is one set. Every number a
+person reads or types stays per side.
 
 ### Editing a logged session
 
