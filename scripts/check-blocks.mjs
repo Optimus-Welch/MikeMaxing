@@ -4,7 +4,7 @@
 import { seedExerciseLibrary } from '../src/lib/exercises.js';
 import { seedSettings } from '../src/lib/seed.js';
 import { generateLiftSession } from '../src/lib/liftGenerator.js';
-import { buildBlocks, buildRunSteps } from '../src/lib/blocks.js';
+import { buildBlocks, buildRunSteps, SIDES } from '../src/lib/blocks.js';
 import { needsRamp, warmupRampFor } from '../src/lib/warmupRamp.js';
 import { summariseSession, findRecords } from '../src/lib/sessionStats.js';
 
@@ -75,10 +75,13 @@ console.log('\n=== run steps ===');
   assert(steps.at(-1).kind !== 'rest', 'a session must not end on a rest step');
 
   // Each block should contribute rounds x (items - trailing rest) steps, plus
-  // two steps (set + rest) per warm-up ramp set done before round 1.
+  // two steps (set + rest) per warm-up ramp set done before round 1. A
+  // per-side exercise contributes one step PER SIDE per round.
   for (const block of blocks) {
     const mine = steps.filter((s) => s.blockId === block.id);
-    const exerciseItems = block.items.filter((i) => i.kind !== 'rest').length;
+    const exerciseItems = block.items
+      .filter((i) => i.kind !== 'rest')
+      .reduce((n, i) => n + (i.kind === 'exercise' && i.unilateral ? SIDES.length : 1), 0);
     const restItems = block.items.filter((i) => i.kind === 'rest').length;
     const expected =
       2 * (block.rampItems?.length ?? 0) +

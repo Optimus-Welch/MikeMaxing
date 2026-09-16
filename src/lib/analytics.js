@@ -12,7 +12,7 @@
 
 import { parseLocalDate, startOfWeek, todayISO } from './weekly.js';
 import { regionFor } from './muscleMap.js';
-import { sidesFor } from './exercises.js';
+import { volumeSidesFor } from './exercises.js';
 
 // -- shared ----------------------------------------------------------------
 
@@ -388,14 +388,13 @@ export function muscleVolume(history, library, { weeks = 8, reference = new Date
       if (!regions.length) continue;
 
       const sets = entry.sets ?? [];
-      // Both sides of a per-side movement, for the same reason totalVolume()
-      // doubles: this figure answers "how much work did this region do", and
+      // Every side actually performed, for the same reason totalVolume() does
+      // it: this figure answers "how much work did this region do", and
       // counting one side halves an all-unilateral leg day on the very chart
-      // that exists to show balance. Set COUNTS stay as logged — a set is one
-      // set whether or not it had two halves.
-      const sides = sidesFor(exercise);
+      // that exists to show balance. Per-side sets now arrive one per side and
+      // count once each; pre-split history counts twice (volumeSidesFor).
       const volume = loadedSets(entry).reduce(
-        (sum, s) => sum + Number(s.weight) * Number(s.reps) * sides,
+        (sum, s) => sum + Number(s.weight) * Number(s.reps) * volumeSidesFor(exercise, s),
         0,
       );
 

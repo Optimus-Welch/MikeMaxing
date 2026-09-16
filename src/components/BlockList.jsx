@@ -124,6 +124,15 @@ export default function BlockList({ blocks, onSwap, onAdjustWeight, location }) 
                   {item.kind !== 'rest' && (item.detail || item.schemeName) && (
                     <div className="bi-detail">{item.detail ?? item.schemeName}</div>
                   )}
+                  {/* The card says how a round is actually performed, so the
+                      set count is never read as "and the other side too,
+                      somehow". Run mode walks these as two separate steps. */}
+                  {item.kind === 'exercise' && item.unilateral && (
+                    <div className="bi-detail is-structure">
+                      Each round: left side, then right side — {item.sets} rounds,{' '}
+                      {item.sets * 2} sets in total.
+                    </div>
+                  )}
                   {item.kind === 'exercise' && (
                     <SuggestionRow item={item} location={location} onAdjust={onAdjustWeight} />
                   )}

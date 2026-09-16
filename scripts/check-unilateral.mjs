@@ -14,6 +14,7 @@ import {
   PER_SIDE_LABEL,
 } from '../src/lib/exercises.js';
 import { generateLiftSession, SCHEMES } from '../src/lib/liftGenerator.js';
+import { buildBlocks, buildRunSteps, SIDES } from '../src/lib/blocks.js';
 import { suggestFor } from '../src/lib/progression.js';
 import { totalVolume } from '../src/lib/sessionStats.js';
 import { muscleVolume } from '../src/lib/analytics.js';
@@ -144,33 +145,92 @@ console.log('\n=== progression does not convert ===');
   console.log(`  logged 50 lb × 12 per side -> suggested ${s.weight} lb × ${s.reps} per side`);
 }
 
-// --- 4. volume counts both sides, and says so ------------------------------
-console.log('\n=== total work counts both sides ===');
+// --- 4. the run flow walks both sides --------------------------------------
+console.log('\n=== both sides are separate steps ===');
 {
-  // Same numbers, one bilateral lift and one per-side lift.
-  const perSide = [{ exerciseId: 'bulgarian-split-squat', name: 'Bulgarian Split Squat', reps: 10, weight: 50 }];
-  const bilateral = [{ exerciseId: 'goblet-squat', name: 'Goblet Squat', reps: 10, weight: 50 }];
+  const perSideEx = {
+    exerciseId: 'bulgarian-split-squat', name: 'Bulgarian Split Squat',
+    pattern: 'unilateral', emphasis: 'secondary', tier: 'primary', unilateral: true,
+    sets: 3, reps: 10, seconds: null, schemeId: 'straight', prescription: '3 × 10 per side',
+    suggestion: { weight: 40, equipment: { kind: 'dumbbellPerHand', step: 5, cap: 52.5 } },
+  };
+  const bilateralEx = {
+    exerciseId: 'goblet-squat', name: 'Goblet Squat',
+    pattern: 'squat', emphasis: 'secondary', tier: 'secondary', unilateral: false,
+    sets: 3, reps: 10, seconds: null, schemeId: 'straight', prescription: '3 × 10',
+    suggestion: { weight: 40, equipment: { kind: 'dumbbellPerHand', step: 5, cap: 52.5 } },
+  };
+  const { blocks } = buildBlocks({ location: 'Home', band: 'Yellow', exercises: [perSideEx, bilateralEx] });
+  const steps = buildRunSteps(blocks);
 
-  assert(totalVolume(bilateral, library) === 500, `bilateral volume should be 500, got ${totalVolume(bilateral, library)}`);
-  assert(totalVolume(perSide, library) === 1000, `per-side volume should count both sides (1000), got ${totalVolume(perSide, library)}`);
+  const sideSteps = steps.filter((s) => s.kind === 'exercise' && s.item.exerciseId === 'bulgarian-split-squat');
+  const flatSteps = steps.filter((s) => s.kind === 'exercise' && s.item.exerciseId === 'goblet-squat');
 
-  const session = (id, exerciseId) => ({
-    id, type: 'Lift', location: 'Home', date: '2026-09-15',
-    exercises: [{
-      exerciseId, name: exerciseId, sets: [{ reps: 10, weight: 50 }],
-    }],
-  });
-  const uni = muscleVolume([session('a', 'bulgarian-split-squat')], library, { reference: new Date('2026-09-16T12:00:00') });
-  const bil = muscleVolume([session('b', 'goblet-squat')], library, { reference: new Date('2026-09-16T12:00:00') });
-  const total = (rows) => rows.reduce((n, r) => n + r.volume, 0);
-  assert(total(uni) === 1000, `muscle volume must double a per-side lift, got ${total(uni)}`);
-  assert(total(bil) === 500, `and leave a bilateral one alone, got ${total(bil)}`);
-  // Set counts are NOT doubled: one set is one set.
+  assert(sideSteps.length === 3 * SIDES.length, `3 rounds x 2 sides = 6 steps, got ${sideSteps.length}`);
+  assert(flatSteps.length === 3, `a bilateral lift stays at 3 steps, got ${flatSteps.length}`);
+  assert(flatSteps.every((s) => s.side == null), 'a bilateral step must carry no side');
+
+  // Every round must contain each side exactly once, left before right, and
+  // both sides must come before the rest that ends the round.
+  for (let round = 1; round <= 3; round++) {
+    const inRound = sideSteps.filter((s) => s.round === round);
+    assert(inRound.length === SIDES.length, `round ${round}: expected both sides, got ${inRound.length}`);
+    assert(
+      inRound.map((s) => s.side).join() === SIDES.map((x) => x.id).join(),
+      `round ${round}: sides must run ${SIDES.map((x) => x.id).join(' then ')}, got ${inRound.map((s) => s.side).join()}`,
+    );
+    for (const s of inRound) assert(!!s.sideLabel, `round ${round}: every side step needs a label`);
+  }
+  // The rest that ENDS round 1 — not a warm-up ramp rest, which precedes the
+  // working sets entirely (this lift earns a ramp too).
+  const roundRest = steps.findIndex((s) => s.kind === 'rest' && s.warmupIndex == null);
+  const firstRoundSides = sideSteps.filter((s) => s.round === 1).map((s) => steps.indexOf(s));
   assert(
-    uni.reduce((n, r) => n + r.sets, 0) === bil.reduce((n, r) => n + r.sets, 0),
-    'set counts must not be doubled — only load-volume is',
+    firstRoundSides.every((i) => i < roundRest),
+    'both sides are performed before the round rest, not either side of it',
   );
-  console.log('  per-side lifts contribute both sides of tonnage; set counts are untouched');
+  assert(
+    steps.filter((s) => s.kind === 'warmup').every((s) => s.side == null),
+    'warm-up ramp sets are not split per side — they are prep, not working sets',
+  );
+  assert(new Set(steps.map((s) => s.key)).size === steps.length, 'side steps must keep keys unique');
+  console.log(`  ${sideSteps.length} labelled side steps across 3 rounds, left then right, rest after the pair`);
+}
+
+// --- 5. volume counts every side performed, exactly once -------------------
+console.log('\n=== total work counts every side once ===');
+{
+  // Logged the new way: one row per side, each carrying its side.
+  const logged = [
+    { exerciseId: 'bulgarian-split-squat', name: 'BSS', reps: 10, weight: 50, side: 'left' },
+    { exerciseId: 'bulgarian-split-squat', name: 'BSS', reps: 10, weight: 50, side: 'right' },
+  ];
+  assert(totalVolume(logged, library) === 1000, `two logged sides = 1000, got ${totalVolume(logged, library)}`);
+
+  // Logged the OLD way, before the split: one row standing for both sides.
+  const legacy = [{ exerciseId: 'bulgarian-split-squat', name: 'BSS', reps: 10, weight: 50 }];
+  assert(totalVolume(legacy, library) === 1000, `legacy per-side row still counts both sides, got ${totalVolume(legacy, library)}`);
+
+  const bilateral = [{ exerciseId: 'goblet-squat', name: 'Goblet Squat', reps: 10, weight: 50 }];
+  assert(totalVolume(bilateral, library) === 500, `bilateral volume should be 500, got ${totalVolume(bilateral, library)}`);
+
+  const session = (id, exerciseId, sets) => ({
+    id, type: 'Lift', location: 'Home', date: '2026-09-15',
+    exercises: [{ exerciseId, name: exerciseId, sets }],
+  });
+  const ref = { reference: new Date('2026-09-16T12:00:00') };
+  const total = (rows) => rows.reduce((n, r) => n + r.volume, 0);
+
+  const split = muscleVolume([session('a', 'bulgarian-split-squat', [
+    { reps: 10, weight: 50, side: 'left' }, { reps: 10, weight: 50, side: 'right' },
+  ])], library, ref);
+  const old = muscleVolume([session('b', 'bulgarian-split-squat', [{ reps: 10, weight: 50 }])], library, ref);
+  const bil = muscleVolume([session('c', 'goblet-squat', [{ reps: 10, weight: 50 }])], library, ref);
+
+  assert(total(split) === 1000, `per-side sets must not be double-counted, got ${total(split)}`);
+  assert(total(old) === 1000, `legacy rows still count both sides, got ${total(old)}`);
+  assert(total(bil) === 500, `a bilateral lift is untouched, got ${total(bil)}`);
+  console.log('  both shapes of history agree on 1000 lb; a bilateral lift stays 500');
 }
 
 console.log(`\n${failures === 0 ? 'All checks passed.' : `${failures} CHECK(S) FAILED`}`);

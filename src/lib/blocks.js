@@ -23,6 +23,14 @@ import {
 } from './warmups.js';
 import { warmupRampFor, WARMUP_REST_SECONDS } from './warmupRamp.js';
 
+// The order a per-side movement is performed in. Fixed rather than alternating
+// so the flow is predictable, and named once so the run screen, the logged
+// set and the session editor all say the same word.
+export const SIDES = [
+  { id: 'left', label: 'Left side' },
+  { id: 'right', label: 'Right side' },
+];
+
 // Rest between working sets, by how heavy the slot is. Orange (recovery-ish)
 // days get slightly shorter rests since the loads are lighter anyway.
 const REST_BY_EMPHASIS = { primary: 150, secondary: 90, accessory: 60 };
@@ -134,7 +142,8 @@ function estimateMinutes(blocks) {
       for (const item of block.items) {
         if (item.kind === 'rest') seconds += item.seconds;
         else if (item.kind === 'prep') seconds += item.seconds ?? 30;
-        else seconds += item.seconds ?? 40;
+        // Both sides of a per-side movement are performed every round.
+        else seconds += (item.seconds ?? 40) * (item.unilateral ? SIDES.length : 1);
       }
     }
   }
@@ -189,8 +198,7 @@ export function buildRunSteps(blocks) {
         // into the next block rather than resting into nothing.
         if (item.kind === 'rest' && isLastRound) return;
 
-        steps.push({
-          key: `${block.id}-r${round}-${item.kind}-${item.exerciseId ?? item.id ?? steps.length}`,
+        const shared = {
           kind: item.kind,
           blockId: block.id,
           blockName: block.name,
@@ -199,6 +207,32 @@ export function buildRunSteps(blocks) {
           round,
           totalRounds: block.rounds,
           item,
+        };
+
+        // A per-side movement becomes TWO steps per round, one per side, run
+        // back to back before the rest. Labelling alone left the flow
+        // ambiguous in exactly the way this is meant to fix: a single "Set 3
+        // of 3" screen for a B-Stance RDL never says the second leg is still
+        // owed, and it is the screen you are looking at when you decide. Two
+        // steps make the second side something you have to walk through
+        // rather than remember, and each side is logged on its own.
+        if (item.kind === 'exercise' && item.unilateral) {
+          SIDES.forEach((side, i) => {
+            steps.push({
+              ...shared,
+              key: `${block.id}-r${round}-exercise-${item.exerciseId}-${side.id}`,
+              side: side.id,
+              sideLabel: side.label,
+              sideIndex: i + 1,
+              sideCount: SIDES.length,
+            });
+          });
+          return;
+        }
+
+        steps.push({
+          ...shared,
+          key: `${block.id}-r${round}-${item.kind}-${item.exerciseId ?? item.id ?? steps.length}`,
         });
       });
     }

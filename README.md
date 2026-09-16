@@ -53,7 +53,10 @@ preview` serves that build locally to test the PWA install flow.
   reads as single-leg/single-arm/split/lunge but was missed) and proves "per
   side" means the same thing end to end — every scheme labels it, 720 generated
   slots label it if and only if the movement is per side, and a 50 lb one-arm
-  row comes back as 50 lb per hand rather than 100 or 25.
+  row comes back as 50 lb per hand rather than 100 or 25. It also walks the run
+  flow — both sides present in every round, left before right, both before the
+  round's rest — and checks that per-side and pre-split history agree on total
+  volume.
 - `npm run check:rampback` covers returning-from-a-break: gap detection (a
   cardio session ends a break, a logged Rest day does not), the window
   expiring on its own, the reduction maths, and — the assertion that matters
@@ -312,9 +315,17 @@ movement is tagged; `check:unilateral` adds a name-based net so a new
   3-1-1` and `EMOM 8 min × 6 per side` are all built in one place and a new
   scheme cannot forget it. Timed work too: `3 × 40s per side`.
 - **The card** — a `per side` chip beside the name, for scanning.
-- **Run mode** — a sentence at the moment it matters (*"One side at a time —
-  12 reps each side. Log **one side** below."*) and the input labels become
-  `Reps / side` and `Weight (lb / side)`, so what you type is unambiguous.
+- **Run mode** — **each side is its own step.** A 3-round per-side movement
+  walks as `Left side → Right side → rest`: six labelled steps rather than
+  three ambiguous ones, with the side named in the header, beside the exercise
+  name, in the rest screen's *up next*, and in the workout overlay's ticks.
+  Labelling alone was not enough — a single "Set 3 of 3" screen never says the
+  second leg is still owed, and that is the screen you are looking at when you
+  decide. The inputs read `Reps / side` and `Weight (lb / side)`.
+- **Set counts follow** — `targetSets` is recorded as sides × sets, so
+  progression compares six logged sets against a target of six rather than
+  reading a half-finished session as a triumph. Warm-up ramp sets are
+  deliberately *not* split: they are prep, not working sets.
 - **The session editor** — the same `/ side` column headers, from the
   `unilateral` flag stored on the logged entry.
 - **Progression** — nothing converts. A one-arm row logged at 50 lb for 12 is
@@ -322,13 +333,15 @@ movement is tagged; `check:unilateral` adds a name-based net so a new
   one side's work end to end, so no code keeps it that way — only the
   discipline of not adding any.
 
-**Load-volume is the one exception, and it is deliberate.** `totalVolume()` and
-`muscleVolume()` count *both* sides, because volume is the only figure that
-answers "how much total work was done" — a set of 10 per side at 50 lb is
-1000 lb of work however it is written down, and counting one side would make an
-all-unilateral leg day read as half a leg day on the very chart that exists to
-show balance. Set *counts* are not doubled: one set is one set. Every number a
-person reads or types stays per side.
+**Load-volume counts every side performed, exactly once.** Now that both sides
+are separate steps, a per-side set is logged once per side and carries `side`,
+so it counts once like any other set. Sets logged *before* that change stood
+for both sides with nothing to say so, and are still counted twice —
+`volumeSidesFor()` keys off the set rather than the exercise, which is what
+lets one history hold both shapes without either being counted wrongly. Either
+way 10 per side at 50 lb is 1000 lb, which matters because the muscle map
+exists to show balance and an all-unilateral leg day must not read as half a
+leg day. Every number a person reads or types stays per side.
 
 ### Editing a logged session
 
