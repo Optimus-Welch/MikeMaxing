@@ -25,10 +25,20 @@ export const MERGE_STRATEGY = {
 
 const asArray = (v) => (Array.isArray(v) ? v : []);
 
-/** Union two arrays by a key, preferring `primary` entries on a clash. */
-function unionBy(primary, secondary, keyOf) {
+/**
+ * Union two arrays by a key, preferring `primary` entries on a clash.
+ *
+ * `preferBy` overrides that default for entries that carry their own version
+ * stamp. Side order says which COLLECTION was written more recently, which is
+ * the wrong question for an edited session: correct a set on your phone, then
+ * log anything at all on the iPad, and the iPad's collection is newer — so
+ * side order alone would hand the clash to the stale copy and silently undo
+ * the correction. An entry that knows when it was last edited beats one that
+ * does not.
+ */
+function unionBy(primary, secondary, keyOf, { preferBy } = {}) {
   const out = [];
-  const seen = new Set();
+  const indexByKey = new Map();
 
   for (const item of [...asArray(primary), ...asArray(secondary)]) {
     if (item == null) continue;
@@ -39,12 +49,22 @@ function unionBy(primary, secondary, keyOf) {
       out.push(item);
       continue;
     }
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
+
+    const existing = indexByKey.get(key);
+    if (existing === undefined) {
+      indexByKey.set(key, out.length);
+      out.push(item);
+      continue;
+    }
+    if (preferBy && (preferBy(item) ?? 0) > (preferBy(out[existing]) ?? 0)) {
+      out[existing] = item;
+    }
   }
   return out;
 }
+
+// A session carries `editedAt` once it has been corrected after the fact.
+const editedAt = (session) => session?.editedAt ?? 0;
 
 const byDateDesc = (a, b) => String(b?.date ?? '').localeCompare(String(a?.date ?? ''));
 
@@ -81,7 +101,7 @@ export function mergeCollection(collection, local, remote) {
     const [first, second] = localNewer
       ? [local.value, remote.value]
       : [remote.value, local.value];
-    const merged = unionBy(first, second, (s) => s?.id).sort(byDateDesc);
+    const merged = unionBy(first, second, (s) => s?.id, { preferBy: editedAt }).sort(byDateDesc);
     return {
       value: merged,
       changed: {

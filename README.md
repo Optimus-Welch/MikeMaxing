@@ -15,7 +15,7 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
-`npm run check` runs the linter plus ten data/logic checks:
+`npm run check` runs the linter plus eleven data/logic checks:
 
 - `npm run check:library` validates the exercise library (no exercise is
   tagged for a location that lacks its equipment) and prints per-location
@@ -42,6 +42,12 @@ preview` serves that build locally to test the PWA install flow.
   calendar day on the user's own clock, so they must be parsed with
   `parseLocalDate()` — `new Date('2026-08-03')` is UTC midnight and silently
   drops a Monday session west of UTC.
+- `npm run check:sessionedit` covers correcting a logged session: input
+  normalisation (blank stays distinguishable from zero), that an edit moves the
+  sets but provably not the date/type/location or what was prescribed, that
+  progression, the finish stats, the charts and the weekly tally all read the
+  corrected numbers, and that an edit wins the sync merge against a stale copy
+  held by a device whose collection is newer.
 - `npm run check:rampback` covers returning-from-a-break: gap detection (a
   cardio session ends a break, a logged Rest day does not), the window
   expiring on its own, the reduction maths, and — the assertion that matters
@@ -97,7 +103,7 @@ your iPad before either syncs, and LWW discards one:
 
 | Collection | Strategy |
 |---|---|
-| `sessionHistory` | union by session `id` |
+| `sessionHistory` | union by session `id`; a newer `editedAt` wins a clash |
 | `readinessLog` | union by `date`, newer side wins a clash |
 | `profile`, `settings`, `equipment` | last-write-wins on `updated_at` |
 
@@ -271,6 +277,42 @@ a backgrounded tab stops firing intervals, but wall-clock time does not.
 **Finish.** Total volume, sets, exercises, an SVG muscle map shaded by how
 much each region was worked, and any weight or rep records beaten. A first-ever
 performance is deliberately *not* a record.
+
+### Editing a logged session
+
+Tap any row under **Recent sessions** to correct what was entered. Per
+exercise, every set's weight, reps and RPE is editable; rows can be cleared
+(an emptied row is dropped on save) or added, for the set you did but did not
+log. Non-lift sessions get **minutes** and **distance** instead.
+
+| | |
+|---|---|
+| **Editable** | what you actually did — per-set weight/reps/RPE, `actualMinutes`, `distance` |
+| **Frozen** | `date`, `type`, `location` — they decide which week a session counts in, which ledger progression reads it from, and which chart it lands on. Changing one is a *move*, not a correction. |
+| **Frozen** | `targetSets` / `targetReps` / `prescription` / `suggestedWeight` — what was *asked for* that day really did happen, and progression judges the session against it. Rewriting the target to match what you did would erase the miss rather than correct the log. |
+
+**Consistency is by construction, not by bookkeeping.** Nothing caches a
+derived number: progression's `lastPerformanceAt`, the finish-screen stats,
+every chart on Trends and the weekly tally all recompute from
+`sessionHistory` on read. Correcting the sets is therefore the whole job —
+fix a `1350 lb` typo and the next suggestion comes off `135`. Weekly counts
+key off date and type, which an edit cannot reach, so they cannot drift.
+
+**Cardio minutes and distance are the fields Trends was already missing.**
+`CARDIO_GAPS` in `analytics.js` names `actualMinutes` and `distance`, and
+`cardioFieldsPresent()` checks for them per field — so filling them in here is
+what makes them stop being listed as *not logged*, and the minutes chart
+relabels itself (`target` → `actual` → `actual where recorded, otherwise
+target`) to match whatever is actually in the data.
+
+**An edit syncs like any other log,** through `replaceSession()` →
+`writeCollection()`, which marks the collection dirty and queues the upload.
+One addition was needed on the merge side: sessions now carry an `editedAt`
+stamp, and `unionById` prefers the entry with the newer stamp on an id clash.
+Side order alone answers *which collection was written more recently*, which
+is the wrong question here — correct a set on your phone, log anything at all
+on the iPad, and the iPad's collection is newer, so side order would hand the
+clash to the stale copy and silently undo the correction.
 
 ### Swapping an exercise
 

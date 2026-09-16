@@ -9,6 +9,7 @@ import {
   strengthSeries,
   progressionSummary,
   cardioSeries,
+  cardioMinutesSeries,
   cardioFieldsPresent,
   CARDIO_GAPS,
   muscleVolume,
@@ -245,8 +246,10 @@ function Strength({ history }) {
 
 function Cardio({ history }) {
   const points = useMemo(() => cardioSeries(history), [history]);
+  const minutes = useMemo(() => cardioMinutesSeries(points), [points]);
   const present = useMemo(() => cardioFieldsPresent(history), [history]);
   const missing = CARDIO_GAPS.filter((g) => !present.has(g.field));
+  const distances = points.filter((p) => p.distance != null);
 
   const byLocation = points.reduce((acc, p) => {
     const key = p.location ?? 'Unknown';
@@ -259,14 +262,28 @@ function Cardio({ history }) {
       <h2>Cardio</h2>
 
       <LineChart
-        points={points.map((p) => ({ x: shortDate(p.date), y: p.targetMinutes }))}
-        label="Cardio target minutes"
+        points={minutes.rows.map((p) => ({ x: shortDate(p.date), y: p.minutes }))}
+        label={`Cardio minutes (${minutes.label})`}
         unit=" min"
       />
       <p className="hint">
-        Target minutes — what readiness prescribed that day. It is labelled &quot;target&quot;
-        because that is honestly what is stored; nothing records what was actually done.
+        Minutes — {minutes.label}. Target minutes are what readiness prescribed that day; actual
+        minutes come from editing a logged session, and are used wherever they exist.
       </p>
+
+      {distances.length > 0 && (
+        <>
+          <LineChart
+            points={distances.map((p) => ({ x: shortDate(p.date), y: p.distance }))}
+            label="Cardio distance"
+            unit=" mi"
+          />
+          <p className="hint">
+            Distance, for the {distances.length} session{distances.length === 1 ? '' : 's'} that
+            recorded one.
+          </p>
+        </>
+      )}
 
       {Object.keys(byLocation).length > 0 && (
         <RankedBars
@@ -285,8 +302,8 @@ function Cardio({ history }) {
           </ul>
           <p className="hint">
             Cardio is logged with a single tap — there is no cardio generator yet, so nothing ever
-            asked for these and nothing recorded them. Charting them needs a change to how sessions
-            are logged, which this screen deliberately is not.
+            asked for these. Minutes and distance can be filled in by tapping the session under
+            Recent sessions on Today; they drop off this list once recorded.
           </p>
         </>
       )}
