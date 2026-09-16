@@ -10,6 +10,7 @@ import {
   setActiveSession,
   clearActiveSession,
   addSession,
+  replaceSession,
   upsertReadinessEntry,
   updateSettings,
 } from '../lib/db.js';
@@ -27,6 +28,7 @@ import { buildBlocks, createRunState } from '../lib/blocks.js';
 import HistoryList from '../components/HistoryList.jsx';
 import BlockList from '../components/BlockList.jsx';
 import ExercisePicker from '../components/ExercisePicker.jsx';
+import SessionEditor from '../components/SessionEditor.jsx';
 import SyncBadge from '../components/SyncBadge.jsx';
 import { initAudio } from '../lib/chime.js';
 
@@ -91,6 +93,9 @@ export default function Today() {
   // Cleared by regenerating, same as swaps.
   const [weightOverrides, setWeightOverrides] = useState({});
   const [swapTarget, setSwapTarget] = useState(null);
+  // A logged session opened for correction. Held by id rather than by value so
+  // it cannot go stale against the live history read below.
+  const [editingId, setEditingId] = useState(null);
 
   // Garmin's number, taken as given — no weighting, no combining.
   const readinessScore = useMemo(() => parseReadinessScore(readinessInput), [readinessInput]);
@@ -197,6 +202,11 @@ export default function Today() {
     }
     return out;
   }, [liftSession, swaps, seed, sessionHistory, weightOverrides]);
+
+  const editingSession = useMemo(
+    () => (editingId ? (sessionHistory.find((s) => s.id === editingId) ?? null) : null),
+    [editingId, sessionHistory],
+  );
 
   const { blocks, estimatedMinutes } = useMemo(
     () => (plannedSession ? buildBlocks(plannedSession) : { blocks: [], estimatedMinutes: 0 }),
@@ -501,8 +511,23 @@ export default function Today() {
 
       <section className="card">
         <h2>Recent sessions</h2>
-        <HistoryList sessions={sessionHistory} />
+        <p className="hint">Tap a session to correct what was logged.</p>
+        <HistoryList sessions={sessionHistory} onSelect={(s) => setEditingId(s.id)} />
       </section>
+
+      {editingSession && (
+        <SessionEditor
+          session={editingSession}
+          onClose={() => setEditingId(null)}
+          onSave={(updated) => {
+            // replaceSession writes through the same path a normal log takes,
+            // so the corrected values are queued for upload and the live read
+            // above picks them straight back up — no local copy to refresh.
+            replaceSession(updated);
+            setEditingId(null);
+          }}
+        />
+      )}
 
       {swapTarget && (
         <ExercisePicker

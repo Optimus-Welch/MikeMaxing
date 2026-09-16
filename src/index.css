@@ -1585,3 +1585,112 @@ button.sync-banner:active {
   font-size: 1rem;
   font-weight: 600;
 }
+
+/* ---- editing a logged session ------------------------------------------ */
+
+/* A history row becomes a button when it is editable. It must still read as a
+   list row, not a chunky control — the affordance is the hover/press state and
+   the Edit hint, not a border. */
+.history-row-btn {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-row-btn:hover .history-edit-hint,
+.history-row-btn:focus-visible .history-edit-hint {
+  opacity: 1;
+}
+
+.history-edit-hint {
+  flex: none;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+/* Always visible on touch, where there is no hover to reveal it. */
+@media (hover: none) {
+  .history-edit-hint {
+    opacity: 1;
+  }
+}
+
+.edit-note {
+  margin: 0 0 14px;
+}
+
+.edit-block {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.edit-block-head {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+/* set no | weight | reps | rpe | clear */
+.edit-row {
+  display: grid;
+  grid-template-columns: 1.6rem repeat(3, minmax(0, 1fr)) 2rem;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.edit-row.is-head {
+  margin-bottom: 4px;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.edit-set-no {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+
+.edit-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.edit-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.sheet-actions button {
+  flex: 1;
+}

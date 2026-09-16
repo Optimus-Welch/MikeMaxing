@@ -2,7 +2,9 @@ import { parseLocalDate } from '../lib/weekly.js';
 
 const TYPE_ICON = { Lift: '🏋️', Cardio: '🏃', Rest: '💤' };
 
-export default function HistoryList({ sessions, limit = 8 }) {
+// `onSelect` is optional — without it this stays the read-only list it was.
+// With it, each row becomes a button that opens the session for correction.
+export default function HistoryList({ sessions, limit = 8, onSelect }) {
   const recent = sessions.slice(0, limit);
 
   if (recent.length === 0) {
@@ -11,20 +13,43 @@ export default function HistoryList({ sessions, limit = 8 }) {
 
   return (
     <ul className="history-list">
-      {recent.map((session) => (
-        <li key={session.id} className="history-item">
-          <span className="type-tag">
-            {TYPE_ICON[session.type] ?? ''} {session.type}
-          </span>
-          <span className="meta">
-            {session.templateId ? `${session.templateId} · ` : ''}
-            {Array.isArray(session.exercises) && session.exercises.length
-              ? `${session.exercises.length} exercises · `
-              : ''}
-            {session.location} · {formatDate(session.date)}
-          </span>
-        </li>
-      ))}
+      {recent.map((session) => {
+        const body = (
+          <>
+            <span className="type-tag">
+              {TYPE_ICON[session.type] ?? ''} {session.type}
+            </span>
+            <span className="meta">
+              {session.templateId ? `${session.templateId} · ` : ''}
+              {Array.isArray(session.exercises) && session.exercises.length
+                ? `${session.exercises.length} exercises · `
+                : ''}
+              {session.location} · {formatDate(session.date)}
+              {session.editedAt ? ' · edited' : ''}
+            </span>
+          </>
+        );
+
+        return (
+          <li key={session.id} className="history-item">
+            {onSelect ? (
+              <button
+                type="button"
+                className="history-row-btn"
+                onClick={() => onSelect(session)}
+                aria-label={`Edit ${session.type} session on ${formatDate(session.date)}`}
+              >
+                {body}
+                <span className="history-edit-hint" aria-hidden="true">
+                  Edit
+                </span>
+              </button>
+            ) : (
+              body
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

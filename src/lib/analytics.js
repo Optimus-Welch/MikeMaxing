@@ -273,8 +273,12 @@ export function progressionSummary(history) {
  *
  * A cardio session is logged as { type, location, date, band, targetMinutes }.
  * There is no generator for cardio yet, so nothing ever asked for a structure,
- * a modality or a distance, and nothing recorded one. Adding them is a logging
- * change, which this screen deliberately is not.
+ * a modality or a distance, and nothing recorded one at log time.
+ *
+ * Editing a logged session can now fill in `actualMinutes` and `distance`
+ * (see sessionEdit.js), so those two leave this list as soon as you record
+ * them — cardioFieldsPresent() is what decides, per field, whether the data
+ * turned up after all.
  */
 export const CARDIO_GAPS = [
   { field: 'distance', label: 'Distance' },
@@ -298,7 +302,38 @@ export function cardioSeries(history) {
       location: s.location ?? null,
       band: s.band ?? null,
       targetMinutes: s.targetMinutes ?? null,
+      // What you actually did, once it has been recorded. Kept separate from
+      // the target rather than replacing it: they answer different questions,
+      // and a chart that silently swapped one for the other would relabel its
+      // own history the first time a session was edited.
+      actualMinutes: s.actualMinutes ?? null,
+      distance: s.distance ?? null,
     }));
+}
+
+/**
+ * Minutes to chart, and what they honestly are. Actual minutes win where they
+ * exist; the label follows the data rather than the other way round, and a
+ * mixed series reports itself as mixed.
+ */
+export function cardioMinutesSeries(points) {
+  const rows = points.map((p) => ({
+    ...p,
+    minutes: p.actualMinutes ?? p.targetMinutes ?? null,
+    isActual: p.actualMinutes != null,
+  }));
+  const withMinutes = rows.filter((r) => r.minutes != null);
+  const actual = withMinutes.filter((r) => r.isActual).length;
+
+  return {
+    rows,
+    label:
+      actual === 0
+        ? 'target'
+        : actual === withMinutes.length
+          ? 'actual'
+          : 'actual where recorded, otherwise target',
+  };
 }
 
 /** Which of the gap fields, if any, have turned up in the data after all. */

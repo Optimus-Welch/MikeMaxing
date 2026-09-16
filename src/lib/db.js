@@ -196,6 +196,28 @@ export function addSession(session) {
 }
 
 /**
+ * Replace one logged session in place, for correcting what was entered.
+ *
+ * Matched by id and written back at the same position, so history stays
+ * newest-first without re-sorting (the edit cannot change a session's date,
+ * so its position cannot have changed either). Goes through writeCollection
+ * like any other log, which marks the collection dirty and queues the upload —
+ * an edit syncs exactly the way the original entry did.
+ *
+ * Returns the updated history, or null if no session with that id exists.
+ */
+export function replaceSession(session) {
+  if (!session?.id) return null;
+  const history = getSessionHistory();
+  const index = history.findIndex((s) => s.id === session.id);
+  if (index === -1) return null;
+
+  const next = history.slice();
+  next[index] = session;
+  return writeCollection('sessionHistory', next);
+}
+
+/**
  * Most recent logged performance of a given exercise, for pre-filling weights.
  * Returns the heaviest set from that session (the one worth matching), or null
  * if this exercise has never been logged with a weight.
