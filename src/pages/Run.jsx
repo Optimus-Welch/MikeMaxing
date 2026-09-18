@@ -11,7 +11,7 @@ import {
 } from '../lib/db.js';
 import { useCollection } from '../lib/useCollection.js';
 import { swapExerciseTo } from '../lib/liftGenerator.js';
-import { LOCATION_LOAD_CAPS } from '../lib/exercises.js';
+import { LOCATION_LOAD_CAPS, isUnilateral } from '../lib/exercises.js';
 import { demoFor } from '../lib/demos.js';
 import { playChime } from '../lib/chime.js';
 import DemoLink from '../components/DemoLink.jsx';
@@ -292,6 +292,7 @@ export default function Run() {
       ) : (
         <WorkView
           step={step}
+          library={library}
           location={state.location}
           onDone={markDone}
           onSkip={skipStep}
@@ -379,11 +380,24 @@ function RestView({ endsAt, seconds, next, soundEnabled, onSkip, onAdd }) {
 
 /* ---------------------------------------------------------------- work --- */
 
-function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
+function WorkView({ step, library, location, onDone, onSkip, onSwap, canSwap }) {
   const item = step.item;
   const isPrep = step.kind === 'prep';
   const isWarmup = step.kind === 'warmup';
   const isTimed = item.seconds != null;
+
+  // A workout already in progress keeps the steps it was built with. If those
+  // were generated from a stale exercise library — the bug that made split
+  // squats read as plain "3 × 10" — the flag is missing from the step, so fall
+  // back to the library the app is running now. The steps cannot be re-split
+  // mid-session without moving the position you are standing at, but the
+  // screen can at least stop being ambiguous about it.
+  const unilateral =
+    item.unilateral === true ||
+    (step.kind === 'exercise' && isUnilateral((library ?? []).find((e) => e.id === item.exerciseId)));
+  // True when this session predates per-side steps: it is a per-side movement,
+  // but the flow was never split, so ONE set here covers both sides.
+  const bothSidesInThisSet = unilateral && step.kind === 'exercise' && !step.side;
 
   const last = useMemo(
     () => (item.exerciseId ? getLastPerformance(item.exerciseId) : null),
@@ -423,7 +437,7 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
               <div className="t-value">{item.weight}</div>
             </div>
             <div className="target-box">
-              <div className="t-label">{item.unilateral ? 'Reps / side' : 'Reps'}</div>
+              <div className="t-label">{unilateral ? 'Reps / side' : 'Reps'}</div>
               <div className="t-value">{item.reps}</div>
             </div>
           </div>
@@ -503,12 +517,18 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
               : 'Last side of this round.'}
           </p>
         )}
+        {bothSidesInThisSet && (
+          <p className="per-side-banner">
+            <strong>Both sides</strong> — {isTimed ? `${item.seconds}s` : `${item.reps} reps`} on
+            each side within this set. Log one side&apos;s numbers below.
+          </p>
+        )}
 
         <div className="run-targets">
           <div className="target-box is-editable">
             <div className="t-label">
               {isTimed ? 'Seconds' : 'Reps'}
-              {item.unilateral ? ' / side' : ''}
+              {unilateral ? ' / side' : ''}
             </div>
             <input
               type="number"
@@ -519,7 +539,7 @@ function WorkView({ step, location, onDone, onSkip, onSwap, canSwap }) {
             />
           </div>
           <div className="target-box is-editable">
-            <div className="t-label">{item.unilateral ? 'Weight (lb / side)' : 'Weight (lb)'}</div>
+            <div className="t-label">{unilateral ? 'Weight (lb / side)' : 'Weight (lb)'}</div>
             <input
               type="number"
               inputMode="decimal"

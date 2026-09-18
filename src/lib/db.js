@@ -7,6 +7,7 @@ import {
   seedProfile,
   seedEquipment,
   seedSettings,
+  libraryFingerprint,
   EXERCISE_LIBRARY_VERSION,
   SETTINGS_VERSION,
 } from './seed.js';
@@ -21,7 +22,7 @@ const DEFAULTS = {
   settings: seedSettings,
   // Bookkeeping that is not user data: which shipped-data versions this
   // browser has already been migrated to.
-  meta: { exerciseLibraryVersion: 0, settingsVersion: 0 },
+  meta: { exerciseLibraryVersion: 0, exerciseLibraryFingerprint: null, settingsVersion: 0 },
   // An in-progress guided workout, or null. Persisted so closing the app
   // mid-session (or the phone locking and the tab being evicted) does not
   // lose the sets already ticked off.
@@ -51,7 +52,11 @@ function ensureSeeded() {
     // — exactly what writeSeed exists to avoid.
     const value =
       collection === 'meta' && freshInstall
-        ? { exerciseLibraryVersion: EXERCISE_LIBRARY_VERSION, settingsVersion: SETTINGS_VERSION }
+        ? {
+            exerciseLibraryVersion: EXERCISE_LIBRARY_VERSION,
+            exerciseLibraryFingerprint: libraryFingerprint(seedExerciseLibrary),
+            settingsVersion: SETTINGS_VERSION,
+          }
         : seedValue;
 
     writeSeed(collection, value);
@@ -64,10 +69,22 @@ function ensureSeeded() {
 // collection that already exists is never re-seeded.
 function ensureLibraryCurrent() {
   const meta = readCollection('meta', DEFAULTS.meta);
-  if ((meta.exerciseLibraryVersion ?? 0) >= EXERCISE_LIBRARY_VERSION) return;
+  const fingerprint = libraryFingerprint(seedExerciseLibrary);
+
+  // Compare CONTENT, not a hand-maintained version number. The version was the
+  // thing that decided this, and it failed exactly as a manual step fails:
+  // 21 exercises gained `unilateral: true`, nobody bumped the number, and
+  // every existing device went on generating sessions from the library it had
+  // cached before the change — showing "3 × 10" for a split squat while the
+  // source said "3 × 10 per side". A fingerprint cannot be forgotten.
+  if (meta.exerciseLibraryFingerprint === fingerprint) return;
 
   writeCollection('exerciseLibrary', seedExerciseLibrary);
-  writeCollection('meta', { ...meta, exerciseLibraryVersion: EXERCISE_LIBRARY_VERSION });
+  writeCollection('meta', {
+    ...meta,
+    exerciseLibraryVersion: EXERCISE_LIBRARY_VERSION,
+    exerciseLibraryFingerprint: fingerprint,
+  });
 }
 
 // Move a pre-Garmin install onto the new settings shape:

@@ -40,10 +40,37 @@ export const seedEquipment = {
 };
 
 // Bump whenever seedExerciseLibrary changes in a way existing installs should
-// pick up. db.js compares this against the version last written to storage and
-// re-seeds the library when it is behind — without this, anyone who already ran
-// Phase 0 would be stuck with the empty library that shipped then.
-export const EXERCISE_LIBRARY_VERSION = 1;
+// pick up. Kept for the record and for fresh-install bookkeeping, but it is NO
+// LONGER what decides whether a device re-seeds — see libraryFingerprint().
+export const EXERCISE_LIBRARY_VERSION = 2;
+
+/**
+ * A content fingerprint of the shipped exercise library.
+ *
+ * This replaces "remember to bump the version" as the thing that decides
+ * whether a device's stored library is out of date, because remembering is
+ * exactly what failed: `unilateral: true` was added to 21 exercises and the
+ * version was left at 1, so every existing install kept its pre-tag library
+ * out of localStorage and showed "3 × 10" where the source said
+ * "3 × 10 per side". Every check passed throughout, because they all import
+ * seedExerciseLibrary directly and never go through storage.
+ *
+ * Derived from the data itself, so it cannot be forgotten: change the library
+ * in any way and the fingerprint changes with it.
+ *
+ * FNV-1a over the serialised library. Not cryptographic — it only has to
+ * change when the content changes, and collisions between two versions of a
+ * hand-edited data file are not a realistic concern.
+ */
+export function libraryFingerprint(library) {
+  const json = JSON.stringify(library);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < json.length; i++) {
+    hash ^= json.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${library.length}-${hash.toString(36)}`;
+}
 
 // Bump when seedSettings changes shape in a way existing installs must adopt.
 // v2 dropped `readinessWeights` (the old multi-input scoring is gone) and
