@@ -15,7 +15,7 @@ Then open the printed `localhost` URL. `npm run build` produces a static
 `dist/` folder (deployable anywhere that serves static files); `npm run
 preview` serves that build locally to test the PWA install flow.
 
-`npm run check` runs the linter plus twelve data/logic checks:
+`npm run check` runs the linter plus thirteen data/logic checks:
 
 - `npm run check:library` validates the exercise library (no exercise is
   tagged for a location that lacks its equipment) and prints per-location
@@ -57,6 +57,11 @@ preview` serves that build locally to test the PWA install flow.
   flow — both sides present in every round, left before right, both before the
   round's rest — and checks that per-side and pre-split history agree on total
   volume.
+- `npm run check:librarysync` drives `db.js` against a fake localStorage
+  holding a **stale** exercise library, the way a real device does. It exists
+  because every other check imports `seedExerciseLibrary` directly and so was
+  blind to the bug where a library change never reached an installed app —
+  see *Getting a library change onto a device* below.
 - `npm run check:rampback` covers returning-from-a-break: gap detection (a
   cardio session ends a break, a logged Rest day does not), the window
   expiring on its own, the reduction maths, and — the assertion that matters
@@ -286,6 +291,31 @@ a backgrounded tab stops firing intervals, but wall-clock time does not.
 **Finish.** Total volume, sets, exercises, an SVG muscle map shaded by how
 much each region was worked, and any weight or rep records beaten. A first-ever
 performance is deliberately *not* a record.
+
+### Getting a library change onto a device
+
+`exerciseLibrary` is reference data that ships in the bundle, but a copy also
+lives in `localStorage` — and **that copy is what the app actually generates
+from**. Keeping it current used to depend on someone bumping
+`EXERCISE_LIBRARY_VERSION` by hand, and that is precisely how it broke: 21
+exercises gained `unilateral: true`, the version stayed at `1`,
+`ensureLibraryCurrent()` returned early on every existing install, and devices
+went on prescribing `3 × 10` for a split squat while the source said
+`3 × 10 per side`. Every check passed the whole time, because each one imports
+`seedExerciseLibrary` directly and never goes near storage.
+
+The decision is now made from the data instead. `libraryFingerprint()` hashes
+the shipped library, `meta.exerciseLibraryFingerprint` records what a device
+last stored, and any difference re-seeds. Change the library in any way — a
+tag, a rename, an added exercise — and the fingerprint moves with it, so the
+manual step that failed no longer exists. `check:librarysync` holds the line by
+running the upgrade through storage rather than around it.
+
+A workout already in progress keeps the steps it was built with, since
+re-splitting them would move the position you are standing at mid-set. Run mode
+falls back to the live library for the *labels* in that case, so a resumed
+session says `Reps / side` and "Both sides — 10 reps on each side within this
+set" rather than staying silent.
 
 ### Per-side (unilateral) movements
 
